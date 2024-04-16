@@ -20,6 +20,7 @@ use tokio::task;
 
 // const DB_VER: &str = "MAR_15_2021";
 const DB_VER: &str = "4_5_2024";
+const SUB_STRING_COUNT: i32 = 8;
 
 #[tokio::main]
 async fn main() {
@@ -83,10 +84,10 @@ fn load_address_in_txt(path: &str) -> Vec<String> {
     let file = File::open(path).expect("couldn't open file");
     let reader = std::io::BufReader::new(file);
     let mut addresses: Vec<String> = Vec::new();
-    for line  in reader.lines() {
+    for line in reader.lines() {
         if let Ok(address) = line {
             if address.starts_with("1") {
-                addresses.push(address);
+                addresses.push(address[(address.chars().count() - SUB_STRING_COUNT as usize)..].to_string());
             }
         }
     }
@@ -110,11 +111,11 @@ fn check_address(
     database: &HashSet<String>,
     public_key: PublicKey,
 ) {
-    let address_string = address.to_string();
     // let _control_address = "11111111111111111111HV1eYjP".to_string();
     // let address_string = _control_address;
-
-    if database.contains(&address_string) {
+    let address_string = address.to_string();
+    let address_suffix = &address_string[(address_string.chars().count() - SUB_STRING_COUNT as usize)..];
+    if database.contains(address_suffix) {
         let data = format!(
             "{}{}{}{}{}{}{}{}{}",
             secret_key.display_secret(),
