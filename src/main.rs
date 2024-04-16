@@ -3,6 +3,7 @@ extern crate num_cpus;
 extern crate secp256k1;
 
 use std::fs::{self, OpenOptions};
+use std::io::BufRead;
 use std::sync::{Arc, RwLock};
 use std::{
     collections::HashSet,
@@ -17,7 +18,8 @@ use secp256k1::{rand, Secp256k1, SecretKey};
 
 use tokio::task;
 
-const DB_VER: &str = "MAR_15_2021";
+// const DB_VER: &str = "MAR_15_2021";
+const DB_VER: &str = "4_5_2024";
 
 #[tokio::main]
 async fn main() {
@@ -28,6 +30,16 @@ async fn main() {
     for file in files {
         let file = file.unwrap();
         let file_name = file.file_name().into_string().unwrap();
+        if file_name.ends_with(".txt") {
+            println!("Loading txt from file {:?}", file);
+            let data:Vec<String> = load_address_in_txt(file.path().to_str().unwrap());
+            // adding addresses to database
+            for ad in data.iter() {
+                database.insert(ad.to_string());
+            }
+            println!("Database size {:?} addresses.", database.len());
+
+        }
         if file_name.ends_with(".pickle") {
             println!("Loading pickle slice from file {:?}", file);
             let data = load_pickle_slice(file.path().to_str().unwrap());
@@ -66,6 +78,21 @@ async fn main() {
     }
 }
 
+// load single txt file from database directory
+fn load_address_in_txt(path: &str) -> Vec<String> {
+    let file = File::open(path).expect("couldn't open file");
+    let reader = std::io::BufReader::new(file);
+    let mut addresses: Vec<String> = Vec::new();
+    for line  in reader.lines() {
+        if let Ok(address) = line {
+            if address.starts_with("1") {
+                addresses.push(address);
+            }
+        }
+    }
+    addresses
+}
+
 // write data to file
 fn write_to_file(data: &str, file_name: &str) {
     let mut file = OpenOptions::new()
@@ -84,7 +111,9 @@ fn check_address(
     public_key: PublicKey,
 ) {
     let address_string = address.to_string();
-    let _control_address = "15x5ugXCVkzTbs24mG2bu1RkpshW3FTYW8".to_string();
+    // let _control_address = "11111111111111111111HV1eYjP".to_string();
+    // let address_string = _control_address;
+
     if database.contains(&address_string) {
         let data = format!(
             "{}{}{}{}{}{}{}{}{}",
