@@ -2,13 +2,13 @@ extern crate bitcoin;
 extern crate num_cpus;
 extern crate secp256k1;
 
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::sync::{Arc, RwLock};
 use std::{
     collections::HashSet,
     fs::File,
-    io::{Read, Write},
+    io::Write,
     time::Instant,
 };
 
@@ -19,41 +19,26 @@ use secp256k1::{rand, Secp256k1, SecretKey};
 use tokio::task;
 
 // const DB_VER: &str = "MAR_15_2021";
-const DB_VER: &str = "4_5_2024";
+// const DB_VER: &str = "4_5_2024";
+const DB_DIR: &str = "Bitcoin_addresses_LATEST.txt"; // 将 4_5_2024 目录包含到二进制文件中
+
 const SUB_STRING_COUNT: i32 = 8;
 
 #[tokio::main]
 async fn main() {
+    check_and_create_file();
     // creating empty database
     let mut database = HashSet::new();
     let timer = Instant::now();
-    let files = fs::read_dir(get_db_dir().as_str()).unwrap();
-    for file in files {
-        let file = file.unwrap();
-        let file_name = file.file_name().into_string().unwrap();
-        if file_name.ends_with(".txt") {
-            println!("Loading txt from file {:?}", file);
-            let data:Vec<String> = load_address_in_txt(file.path().to_str().unwrap());
-            // adding addresses to database
-            for ad in data.iter() {
-                database.insert(ad.to_string());
-            }
-            println!("Database size {:?} addresses.", database.len());
-
-        }
-        if file_name.ends_with(".pickle") {
-            println!("Loading pickle slice from file {:?}", file);
-            let data = load_pickle_slice(file.path().to_str().unwrap());
-            // adding addresses to database
-            for ad in data.iter() {
-                database.insert(ad.to_string());
-            }
-            //database size
-            println!("Database size {:?} addresses.", database.len());
-        }
+    let data: Vec<String> = load_address_in_txt(DB_DIR);
+    // adding addresses to database
+    for ad in data.iter() {
+        database.insert(ad.to_string());
     }
+    println!("Database size {:?} addresses.", database.len());
+
     println!(
-        "Load of pickle files completed in {:.2?}, database size: {:?}",
+        "Load of  files completed in {:.2?}, database size: {:?}",
         timer.elapsed(),
         database.len()
     );
@@ -81,17 +66,30 @@ async fn main() {
 
 // load single txt file from database directory
 fn load_address_in_txt(path: &str) -> Vec<String> {
-    let file = File::open(path).expect("couldn't open file");
+    let file = File::open(path).expect("couldn't open address file");
     let reader = std::io::BufReader::new(file);
     let mut addresses: Vec<String> = Vec::new();
     for line in reader.lines() {
         if let Ok(address) = line {
             if address.starts_with("1") {
-                addresses.push(address[(address.chars().count() - SUB_STRING_COUNT as usize)..].to_string());
+                addresses.push(
+                    address[(address.chars().count() - SUB_STRING_COUNT as usize)..].to_string(),
+                );
             }
         }
     }
     addresses
+}
+
+fn check_and_create_file() {
+    let file_path = found_file_path();
+    if !std::path::Path::new(&file_path).exists() {
+        let _file = std::fs::File::create(&file_path).unwrap();
+        // You can write some initial content to the file here if needed
+        println!("Created new plutus.txt file.");
+    } else {
+        println!("plutus.txt file already exists.");
+    }
 }
 
 // write data to file
@@ -114,7 +112,8 @@ fn check_address(
     // let _control_address = "11111111111111111111HV1eYjP".to_string();
     // let address_string = _control_address;
     let address_string = address.to_string();
-    let address_suffix = &address_string[(address_string.chars().count() - SUB_STRING_COUNT as usize)..];
+    let address_suffix =
+        &address_string[(address_string.chars().count() - SUB_STRING_COUNT as usize)..];
     if database.contains(address_suffix) {
         let data = format!(
             "{}{}{}{}{}{}{}{}{}",
@@ -130,23 +129,6 @@ fn check_address(
         );
         write_to_file(data.as_str(), found_file_path().as_str());
     }
-}
-
-// load single pickle file from database directory
-fn load_pickle_slice(path: &str) -> Vec<String> {
-    let mut bytes = Vec::new();
-    File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
-    let data: Vec<String> =
-        serde_pickle::from_slice(&bytes, Default::default()).expect("couldn't load pickle");
-    data
-}
-
-// get project dir
-fn get_db_dir() -> String {
-    let mut path = std::env::current_dir().unwrap();
-    path.push("database");
-    path.push(DB_VER);
-    path.to_str().unwrap().to_string()
 }
 
 // get found.txt file path
