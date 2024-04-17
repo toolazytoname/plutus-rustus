@@ -20,23 +20,17 @@ use tokio::task;
 
 // const DB_VER: &str = "MAR_15_2021";
 // const DB_VER: &str = "4_5_2024";
-const DB_DIR: &str = "Bitcoin_addresses_LATEST.txt"; // 将 4_5_2024 目录包含到二进制文件中
+const DB_DIR: &str = "Bitcoin_addresses_LATEST.txt"; // 将 4_5_2024 
 
 const SUB_STRING_COUNT: i32 = 8;
 
 #[tokio::main]
 async fn main() {
     check_and_create_file();
-    // creating empty database
-    let mut database = HashSet::new();
     let timer = Instant::now();
-    let data: Vec<String> = load_address_in_txt(DB_DIR);
-    // adding addresses to database
-    for ad in data.iter() {
-        database.insert(ad.to_string());
-    }
+    // creating database
+    let database: HashSet<String> = load_address_in_txt(DB_DIR);
     println!("Database size {:?} addresses.", database.len());
-
     println!(
         "Load of  files completed in {:.2?}, database size: {:?}",
         timer.elapsed(),
@@ -65,14 +59,14 @@ async fn main() {
 }
 
 // load single txt file from database directory
-fn load_address_in_txt(path: &str) -> Vec<String> {
+fn load_address_in_txt(path: &str) -> HashSet<String> {
     let file = File::open(path).expect("couldn't open address file");
     let reader = std::io::BufReader::new(file);
-    let mut addresses: Vec<String> = Vec::new();
+    let mut addresses = HashSet::new();
     for line in reader.lines() {
         if let Ok(address) = line {
             if address.starts_with("1") {
-                addresses.push(
+                addresses.insert(
                     address[(address.chars().count() - SUB_STRING_COUNT as usize)..].to_string(),
                 );
             }
