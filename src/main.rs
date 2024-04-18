@@ -195,9 +195,11 @@ fn found_file_path() -> String {
 //Bloom
  // Core ThreadId(5) checked 100000 addresses in 1.98, iter/sec: 50403.73601725324
  // Core ThreadId(2) checked 100000 addresses in 1.99, iter/sec: 50322.380897775176
+
+//  Core ThreadId(4) checked 100000 addresses in 3.05, iter/sec: 32773.38471749095
 fn process(filter: &BloomFilter) {
-    let mut count: f64 = 0.0;
-    let start = Instant::now();
+    // let mut count: f64 = 0.0;
+    // let start = Instant::now();
     loop {
         // Generating secret key
         let secp = Secp256k1::new();
@@ -211,17 +213,17 @@ fn process(filter: &BloomFilter) {
         check_address(&private_key, secret_key, &address, filter, public_key);
 
         // FOR BENCHMARKING ONLY! (has to be commented out for performance gain)
-        count += 1.0;
-        if count % 100000.0 == 0.0 {
-            let current_core = std::thread::current().id();
-            let elapsed = start.elapsed().as_secs_f64();
-            println!(
-                "Core {:?} checked {} addresses in {:.2?}, iter/sec: {}",
-                current_core,
-                count,
-                elapsed,
-                count / elapsed
-            );
-        }
+        // count += 1.0;
+        // if count % 100000.0 == 0.0 {
+        //     let current_core = std::thread::current().id();
+        //     let elapsed = start.elapsed().as_secs_f64();
+        //     println!(
+        //         "Core {:?} checked {} addresses in {:.2?}, iter/sec: {}",
+        //         current_core,
+        //         count,
+        //         elapsed,
+        //         count / elapsed
+        //     );
+        // }
     }
 }
