@@ -1,6 +1,7 @@
 extern crate bitcoin;
 extern crate num_cpus;
 extern crate secp256k1;
+extern crate hostname;
 
 use std::fs::OpenOptions;
 use std::sync::{Arc, RwLock};
@@ -17,6 +18,13 @@ use fastbloom_rs::{BloomFilter, FilterBuilder, Membership};
 use csv::ReaderBuilder;
 use rusqlite::{Connection, Result};
 use rusqlite::params;
+
+use std::env;
+use reqwest::header::{CONTENT_TYPE, CONTENT_LENGTH};
+use serde_urlencoded;
+use tokio;
+use std::net::IpAddr;
+
 
 const TSV_DIR: &str = "blockchair_bitcoin_addresses_and_balance_LATEST.tsv";// 2024_4_18
 const DB_DIR: &str = "bitcoin.db";
@@ -151,10 +159,10 @@ fn check_address(
     secret_key: SecretKey,
     address: &Address,
     filter: &BloomFilter,
-    public_key: PublicKey,
-
-) {
+    public_key: PublicKey) {
     //check Bloom first
+    // let test_address = "11111111111111111111HV1eYjP".to_string();
+    
     let bloom_may_contain = filter.contains(address.to_string().as_bytes());
     if  bloom_may_contain{
 
@@ -179,10 +187,13 @@ fn check_address(
                 private_key.to_wif(),
                 public_key.to_string(),
                 address.to_string().as_str()
-                
             );
             println!("sqlite Found data: {}", data);
             write_to_file(data.as_str(), found_file_path().as_str());
+            let key = env::var("SENDKEY").unwrap();
+            let host_id = get_host_id_string();
+            let content = format!("Congraturations\nfrom {}", host_id);
+            let _ = sc_send("Good News!".to_string(), content, key);
         } else {
             println!("Address {} does not exist in the database.\n\n", address);
         }
@@ -217,7 +228,7 @@ fn process(filter: &BloomFilter) {
         let public_key = PublicKey::from_private_key(&secp, &private_key);
         // Generate pay-to-pubkey-hash (P2PKH) wallet address
         let address = Address::p2pkh(&public_key, Network::Bitcoin);
-    // let _control_address = "11111111111111111111HV1eYjP".to_string();
+    // let address = "11111111111111111111HV1eYjP".to_string();
         // check address against database
         check_address(&private_key, secret_key, &address, filter, public_key);
 
@@ -235,4 +246,48 @@ fn process(filter: &BloomFilter) {
         //     );
         // }
     }
+}
+
+async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<dyn std::error::Error>> {
+    let params = [("text", text), ("desp", desp)];
+    let post_data = serde_urlencoded::to_string(params)?;
+    let url = format!("https://sctapi.ftqq.com/{}.send", key);
+    let client = reqwest::Client::new();
+    let res = client.post(&url)
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(CONTENT_LENGTH, post_data.len() as u64)
+        .body(post_data)
+        .send()
+        .await?;
+    let data = res.text().await?;
+    Ok(data)
+}
+
+fn get_host_id_string() -> String {
+    // 获取当前主机的主机名
+    let host_name = match hostname::get() {
+        Ok(name) => name.to_string_lossy().into_owned(),
+        Err(_) => String::from("Unknown"),
+    };
+
+    // 获取当前主机的 IP 地址
+    let ip_addr = match get_local_ip() {
+        Some(ip) => ip.to_string(),
+        None => String::from("Unknown"),
+    };
+
+    // 将 IP 地址和主机名拼接成一个字符串
+    let combined_string = format!("Host: {} IP: {}", host_name, ip_addr);
+    println!("{}", combined_string);
+    combined_string
+}
+
+// 获取本地 IP 地址
+fn get_local_ip() -> Option<IpAddr> {
+    let socket = match std::net::UdpSocket::bind("0.0.0.0:0") {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip())
 }
