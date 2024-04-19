@@ -71,8 +71,12 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
     println!("Create db in {} ",DB_DIR);
     println!("Create table ");
     let mut conn = Connection::open(DB_DIR)?;
+    //set journal_mode = OFF
+    // conn.execute("PRAGMA journal_mode = OFF", [])?;
+    // conn.execute("PRAGMA synchronous = 0", [])?;
+
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS btc_addresses (address TEXT PRIMARY KEY, balance INTEGER)",
+        "CREATE TABLE IF NOT EXISTS btc_addresses (address TEXT PRIMARY KEY)",
         [],
     )?;
     println!("Insert data into table ");
@@ -82,12 +86,15 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
     for result in rdr.records() {
         let record = result?;
         let address = record.get(0).unwrap();
-        let balance = record.get(1).unwrap();
+        // let balance = record.get(1).unwrap();
         // println!("{:?}", record);
-        tx.execute(
-            "INSERT INTO btc_addresses (address, balance) VALUES (?1,?2)",
-            &[&address, &balance],
-        )?;
+        // to save space, we only save address that starts with 1
+        if address.starts_with("1") {
+            tx.execute(
+                "INSERT INTO btc_addresses (address) VALUES (?1)",
+                &[&address],
+            )?;    
+        }
     }
     let tx_result = tx.commit();
     println!("Insert data into table end.{:?}",tx_result);
@@ -105,7 +112,9 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
 
 fn load_bloom_in_sqlite(sqlite_db_path: &str) -> BloomFilter {
     let conn = Connection::open(sqlite_db_path).unwrap();
-    let mut addresses = FilterBuilder::new(53_273_531, 0.000_001).build_bloom_filter();
+    // 53_273_531 full
+    // 23_072_442 start with 1
+    let mut addresses = FilterBuilder::new(23_072_442, 0.000_001).build_bloom_filter();
     let mut stmt = conn.prepare("SELECT address FROM btc_addresses").unwrap();
     let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
     for row in rows {
@@ -159,18 +168,18 @@ fn check_address(
         println!("Bloom Found data: {}", data);
 
         let conn = Connection::open(DB_DIR).unwrap();
-        let mut stmt = conn.prepare("SELECT balance FROM btc_addresses WHERE address = ?").unwrap();
+        let mut stmt = conn.prepare("SELECT address FROM btc_addresses WHERE address = ?").unwrap();
         let mut rows = stmt.query(params![address.to_string()]).unwrap();
     
-        if let Some(row) = rows.next().unwrap() {
-            let balance: i64 = row.get(0).unwrap();
+        if let Some(_) = rows.next().unwrap() {
+            // let balance: i64 = row.get(0).unwrap();
             let data = format!(
-                "secret_key:{}\n private_key:{} \n public_key:{} \naddress:{}\n balance:{} \n\n",
+                "secret_key:{}\n private_key:{} \n public_key:{} \naddress:{}\n  \n\n",
                 secret_key.display_secret(),
                 private_key.to_wif(),
                 public_key.to_string(),
-                address.to_string().as_str(),
-                balance
+                address.to_string().as_str()
+                
             );
             println!("sqlite Found data: {}", data);
             write_to_file(data.as_str(), found_file_path().as_str());
