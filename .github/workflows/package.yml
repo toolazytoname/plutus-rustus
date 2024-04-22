@@ -21,10 +21,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       
-      - name: Set up Rust
-        uses: actions/setup-rust@v1
-        with:
-          profile: minimal
+      # - name: Set up Rust
+      #   uses: actions/setup-rust@v1
+      #   with:
+      #     profile: minimal
 
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
