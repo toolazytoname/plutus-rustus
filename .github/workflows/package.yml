@@ -33,8 +33,9 @@ jobs:
 
       - name: Build for ${{ matrix.os }}
         run: |
-          cargo build --release
-          mv target/release/plutus-rustus target/release/plutus-rustus_${{ matrix.os }}
+          cargo build --release --target-dir custom_target_dir 
+          mv custom_target_dir/release/plutus-rustus custom_target_dir/release/plutus-rustus_${{ runner.os }}
+
 
   create_release:
     runs-on: ubuntu-latest
