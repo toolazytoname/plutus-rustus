@@ -32,8 +32,9 @@ jobs:
           echo "first line"
 
       - name: Build for ${{ matrix.os }}
-        run: cargo build --release
-        run: mv target/release/plutus-rustus target/release/plutus-rustus_${{ matrix.os }}
+        run: |
+          cargo build --release
+          mv target/release/plutus-rustus target/release/plutus-rustus_${{ matrix.os }}
 
   create_release:
     runs-on: ubuntu-latest
