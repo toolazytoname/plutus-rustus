@@ -1,0 +1,50 @@
+name: package
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: ['ubuntu-latest', 'macos-latest']
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          profile: minimal
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "first line"
+
+      - name: Build for ${{ matrix.os }}
+        run: |
+          cargo build --release
+          mv target/release/plutus-rustus target/release/plutus-rustus_${{ matrix.os }}
+
+  create_release:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/plutus-rustus_ubuntu-latest
+            target/release/plutus-rustus_macos-latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
