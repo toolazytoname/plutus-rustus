@@ -33,8 +33,8 @@ jobs:
 
       - name: Build for ${{ matrix.os }}
         run: |
-          cargo build --release --target-dir custom_target_dir 
-          mv custom_target_dir/release/plutus-rustus custom_target_dir/release/plutus-rustus_${{ runner.os }}
+          cargo build --release --target-dir ~/custom_target_dir 
+          mv ~/custom_target_dir/release/plutus-rustus ~/custom_target_dir/release/plutus-rustus_${{ runner.os }}
 
 
   create_release:
@@ -46,7 +46,7 @@ jobs:
         with:
           tag_name: v0.0.1
           files: |
-            target/release/plutus-rustus_ubuntu-latest
-            target/release/plutus-rustus_macos-latest
+            ~/custom_target_dir/release/plutus-rustus_ubuntu-latest
+            ~/custom_target_dir/release/plutus-rustus_macos-latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
