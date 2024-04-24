@@ -24,20 +24,30 @@ use reqwest::header::{CONTENT_TYPE, CONTENT_LENGTH};
 use serde_urlencoded;
 use tokio;
 use std::net::IpAddr;
+use log::{self, warn};
+use log::{debug, error, log_enabled, info, Level};
+
+
+
+
 
 
 const TSV_DIR: &str = "blockchair_bitcoin_addresses_and_balance_LATEST.tsv";// 2024_4_18
 const DB_DIR: &str = "bitcoin.db";
 
+
 #[tokio::main]
 async fn main() {
+     // 注意，env_logger 必须尽可能早的初始化
+    env_logger::init();
     check_and_create_file();
     let timer = Instant::now();
     //check sqlite
     let load_tsv_result = load_address_and_balance_in_tsv();
-    println!("Load tsv completed in {:.2?};result is {:?}",timer.elapsed(),load_tsv_result);
+    info!("Load tsv completed in {:.2?};result is {:?}",timer.elapsed(),load_tsv_result);
+    
     let filter:BloomFilter = load_bloom_in_sqlite(DB_DIR);
-    println!("Create Bloom completed in {:.2?}",timer.elapsed());
+    info!("Create Bloom completed in {:.2?}",timer.elapsed());
 
     // single thread version of processing
     // process(&database);
@@ -48,13 +58,13 @@ async fn main() {
     //get number of logical cores
     let num_cores = num_cpus::get();
     // let num_cores = 2;
-    println!("Running on {} logical cores", num_cores);
+    info!("Running on {} logical cores", num_cores);
     //run process on all available cores
     for _ in 0..num_cores {
         let clone_filter_ = Arc::clone(&filter_);
         task::spawn_blocking(move || {
             let current_core = std::thread::current().id();
-            println!("Core {:?} started", current_core);
+            info!("Core {:?} started", current_core);
             let fl = clone_filter_.read().unwrap();
             process(&fl);
         });
@@ -63,21 +73,21 @@ async fn main() {
 
 fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
     if !std::path::Path::new(TSV_DIR).exists(){
-        println!("tsv file not found in {}",TSV_DIR);
+        info!("tsv file not found in {}",TSV_DIR);
         // return Err("tsv file not found".into());
     }
-    println!("tsv file found in {}",TSV_DIR);
+    info!("tsv file found in {}",TSV_DIR);
     //check if db file exists
     
     if std::path::Path::new(DB_DIR).exists(){
-        println!("db file already exists in {}",DB_DIR);
+        info!("db file already exists in {}",DB_DIR);
         let conn = Connection::open(DB_DIR)?;
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM btc_addresses", [], |row| row.get(0))?;
-        println!("db already exists in {},Total number of rows in btc_addresses table: {}", DB_DIR,count);
+        info!("db already exists in {},Total number of rows in btc_addresses table: {}", DB_DIR,count);
         return Ok(());
     }
-    println!("Create db in {} ",DB_DIR);
-    println!("Create table ");
+    info!("Create db in {} ",DB_DIR);
+    info!("Create table ");
     let mut conn = Connection::open(DB_DIR)?;
     //set journal_mode = OFF
     // conn.execute("PRAGMA journal_mode = OFF", [])?;
@@ -87,7 +97,7 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
         "CREATE TABLE IF NOT EXISTS btc_addresses (address TEXT PRIMARY KEY)",
         [],
     )?;
-    println!("Insert data into table ");
+    info!("Insert data into table ");
     let tx = conn.transaction().unwrap();
     let file = File::open(TSV_DIR).expect("couldn't open tsv file");
     let mut rdr = ReaderBuilder::new().delimiter(b'\t').from_reader(file);
@@ -95,7 +105,7 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
         let record = result?;
         let address = record.get(0).unwrap();
         // let balance = record.get(1).unwrap();
-        // println!("{:?}", record);
+        // info!("{:?}", record);
         // to save space, we only save address that starts with 1
         if address.starts_with("1") {
             tx.execute(
@@ -105,16 +115,16 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let tx_result = tx.commit();
-    println!("Insert data into table end.{:?}",tx_result);
+    info!("Insert data into table end.{:?}",tx_result);
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM btc_addresses", [], |row| row.get(0))?;
-    println!("Total number of rows in btc_addresses table: {}",count);
-    println!("crreate index.");
+    info!("Total number of rows in btc_addresses table: {}",count);
+    info!("crreate index.");
     // 创建 address 字段的索引
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_address ON btc_addresses (address)",
         [],
     )?;
-    println!("load_address_and_balance_in_tsv end.");
+    info!("load_address_and_balance_in_tsv end.");
     Ok(())
 }
 
@@ -129,7 +139,7 @@ fn load_bloom_in_sqlite(sqlite_db_path: &str) -> BloomFilter {
         let address = row.unwrap();
         addresses.add(address.as_bytes());
     }
-    println!("load_bloom_in_sqlite end.");
+    info!("load_bloom_in_sqlite end.");
     addresses
 }
 
@@ -138,9 +148,9 @@ fn check_and_create_file() {
     if !std::path::Path::new(&file_path).exists() {
         let _file = std::fs::File::create(&file_path).unwrap();
         // You can write some initial content to the file here if needed
-        println!("Created new plutus.txt file.");
+        info!("Created new plutus.txt file.");
     } else {
-        println!("plutus.txt file already exists.");
+        info!("plutus.txt file already exists.");
     }
 }
 
@@ -173,7 +183,7 @@ fn check_address(
             public_key.to_string(),
             address.to_string().as_str(),
         );
-        println!("Bloom Found data: {}", data);
+        info!("Bloom Found data: {}", data);
 
         let conn = Connection::open(DB_DIR).unwrap();
         let mut stmt = conn.prepare("SELECT address FROM btc_addresses WHERE address = ?").unwrap();
@@ -188,14 +198,14 @@ fn check_address(
                 public_key.to_string(),
                 address.to_string().as_str()
             );
-            println!("sqlite Found data: {}", data);
+            warn!("sqlite Found data: {}", data);
             write_to_file(data.as_str(), found_file_path().as_str());
             let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
             let host_id = get_host_id_string();
             let content = format!("Congraturations\nfrom {}", host_id);
             let _ = sc_send("Good News!".to_string(), content, key);
         } else {
-            println!("Address {} does not exist in the database.\n\n", address);
+            info!("Address {} does not exist in the database.\n\n", address);
         }
         
     }
@@ -237,7 +247,7 @@ fn process(filter: &BloomFilter) {
         // if count % 100000.0 == 0.0 {
         //     let current_core = std::thread::current().id();
         //     let elapsed = start.elapsed().as_secs_f64();
-        //     println!(
+        //     info!(
         //         "Core {:?} checked {} addresses in {:.2?}, iter/sec: {}",
         //         current_core,
         //         count,
@@ -249,17 +259,6 @@ fn process(filter: &BloomFilter) {
 }
 
 /* sc_send 发送消息到Server酱
-
-
-# Example:
-```
-let key = env::var("SENDKEY").unwrap();
-println!("SENDKEY: {}", key);
-let host_id = get_host_id_string();
-println!("HOST_ID: {}", host_id);
-let content = format!("Congraturations\nfrom {}", host_id);
-println!("CONTENT: {}", content);
-let _ = sc_send("Good News!".to_string(), content, key)
 ```
  */
 async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<dyn std::error::Error>> {
@@ -274,7 +273,7 @@ async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<
         .send()
         .await?;
     let data = res.text().await?;
-    print!("Server酱 推送结果: {}", data);
+    error!("Server酱 推送结果: {}", data);
     Ok(data)
 }
 
@@ -293,7 +292,7 @@ fn get_host_id_string() -> String {
 
     // 将 IP 地址和主机名拼接成一个字符串
     let combined_string = format!("Host: {} IP: {}", host_name, ip_addr);
-    println!("{}", combined_string);
+    info!("{}", combined_string);
     combined_string
 }
 
@@ -316,11 +315,11 @@ mod tests {
     #[test]
     fn test_sc_send() {
         let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
-        println!("SENDKEY: {}", key);
+        info!("SENDKEY: {}", key);
         let host_id = get_host_id_string();
-        println!("HOST_ID: {}", host_id);
+        info!("HOST_ID: {}", host_id);
         let content = format!("Congraturations\nfrom {}", host_id);
-        print!("CONTENT: {}", content);
+        info!("CONTENT: {}", content);
         // let _ = sc_send("Good News!".to_string(), content, key)
 
         let text = "Good News!".to_string();
