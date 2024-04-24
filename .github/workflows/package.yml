@@ -39,3 +39,7 @@ jobs:
             ./target/release/plutus-rustus_${{ runner.os }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload to dufs
+        run: |
+        curl -T ./target/release/plutus-rustus_${{ runner.os }}  ${{ DUFS_URL }}/plutus-rustus/release/plutus-rustus_${{ runner.os }}
+          #  --user ${{ secrets.DUFS_TOKEN }}
