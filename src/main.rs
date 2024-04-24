@@ -76,7 +76,6 @@ fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
         info!("tsv file not found in {}",TSV_DIR);
         // return Err("tsv file not found".into());
     }
-    info!("tsv file found in {}",TSV_DIR);
     //check if db file exists
     
     if std::path::Path::new(DB_DIR).exists(){
