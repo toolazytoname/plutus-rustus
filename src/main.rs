@@ -190,7 +190,7 @@ fn check_address(
             );
             println!("sqlite Found data: {}", data);
             write_to_file(data.as_str(), found_file_path().as_str());
-            let key = env::var("SENDKEY").unwrap();
+            let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
             let host_id = get_host_id_string();
             let content = format!("Congraturations\nfrom {}", host_id);
             let _ = sc_send("Good News!".to_string(), content, key);
@@ -248,6 +248,20 @@ fn process(filter: &BloomFilter) {
     }
 }
 
+/* sc_send 发送消息到Server酱
+
+
+# Example:
+```
+let key = env::var("SENDKEY").unwrap();
+println!("SENDKEY: {}", key);
+let host_id = get_host_id_string();
+println!("HOST_ID: {}", host_id);
+let content = format!("Congraturations\nfrom {}", host_id);
+println!("CONTENT: {}", content);
+let _ = sc_send("Good News!".to_string(), content, key)
+```
+ */
 async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<dyn std::error::Error>> {
     let params = [("text", text), ("desp", desp)];
     let post_data = serde_urlencoded::to_string(params)?;
@@ -260,6 +274,7 @@ async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<
         .send()
         .await?;
     let data = res.text().await?;
+    print!("Server酱 推送结果: {}", data);
     Ok(data)
 }
 
@@ -291,3 +306,33 @@ fn get_local_ip() -> Option<IpAddr> {
     socket.connect("8.8.8.8:80").ok()?;
     Some(socket.local_addr().ok()?.ip())
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_sc_send() {
+        let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
+        println!("SENDKEY: {}", key);
+        let host_id = get_host_id_string();
+        println!("HOST_ID: {}", host_id);
+        let content = format!("Congraturations\nfrom {}", host_id);
+        print!("CONTENT: {}", content);
+        // let _ = sc_send("Good News!".to_string(), content, key)
+
+        let text = "Good News!".to_string();
+        // let desp = "Test Description".to_string();
+        // let key = "YOUR_SENDKEY_HERE".to_string(); // 请替换为您的实际 SendKey
+        
+        // 调用 sc_send 函数进行测试
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(sc_send(text, content, key));
+
+        // 检查测试结果
+        assert!(result.is_ok(), "sc_send function test failed");
+    }
+}
+
+// 这里是您现有的代码

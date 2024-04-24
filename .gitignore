@@ -2,6 +2,6 @@ target
 .DS_Store
 .vscode
 Cargo.lock
-.db
-.tsv
+*.db
+*.tsv
 shell

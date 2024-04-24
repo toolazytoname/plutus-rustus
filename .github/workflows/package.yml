@@ -25,21 +25,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           echo "first line"
-      - name: Set up the custom directory
-        run: |
-          echo "pwd is: "
           
       - name: Build for ${{ matrix.os }}
         run: |
           cargo build --release 
           mv ./target/release/plutus-rustus ./target/release/plutus-rustus_${{ runner.os }}
-          
-      - name: check handle after build
-        run: | 
-          echo "pwd is: "
-          pwd
-          echo "ls is:"
-          ls
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
