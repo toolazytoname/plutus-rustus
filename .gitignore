@@ -11,7 +11,9 @@ findings/
 logs/
 plutus.txt
 *.db
+*.pickle
 *.tsv
 *.tsv.gz
 *.gz
 *.log
+database/tiers/*.bin
