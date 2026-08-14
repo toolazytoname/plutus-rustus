@@ -20,21 +20,23 @@ Minimum <a href="#memory-consumption">RAM requirements</a>
 
 # Installation
 
-The libsecp256k1 C source is a git **submodule**, so clone recursively:
-
-```
-$ git clone --recursive https://github.com/a137x/plutus-rustus.git
-```
-
-Already cloned without `--recursive`? Pull the submodule in:
-
-```
-$ git submodule update --init --recursive
+```bash
+git clone --recursive https://github.com/toolazytoname/plutus-rustus.git
+cd plutus-rustus
+./install.sh
 ```
 
-Compilation:
-```
-cargo rustc --release -- -C target-cpu=native
+The libsecp256k1 C source is a git submodule (`depend/secp256k1`). Clone with
+`--recursive`, or run `git submodule update --init --recursive` afterwards.
+
+Long-running host: see [docs/DEPLOY.md](docs/DEPLOY.md). Weak VPS keeps
+`profile = "low"` in `config.toml`. Operator commands:
+
+```bash
+./shell/plutus start
+./shell/plutus status
+./shell/plutus logs
+./shell/plutus upgrade
 ```
 
 # Start
@@ -43,26 +45,6 @@ cargo rustc --release -- -C target-cpu=native
 ./target/release/plutus-rustus
 # same as:
 ./target/release/plutus-rustus run
-```
-
-Copy `config.example.toml` to `config.toml` and `env.example` to `.env`. Weak
-VPS: keep `profile = "low"`. See [docs/DEPLOY.md](docs/DEPLOY.md) for Bark,
-CPU limits, daily snapshot refresh, and systemd.
-
-Long-running host (restart-on-crash, log file, no secrets in scripts):
-
-```bash
-cp config.example.toml config.toml
-bash shell/install_start.sh
-bash shell/start.sh
-```
-
-systemd units live in `deploy/`. Snapshot refresh:
-
-```bash
-./target/release/plutus-rustus data prepare   # pickle -> binary snapshot
-./target/release/plutus-rustus data update    # download latest funded set
-./target/release/plutus-rustus doctor
 ```
 
 # Proof Of Concept
@@ -75,7 +57,7 @@ This program is essentially a brute forcing algorithm. It continuously generates
 
 Each worker thread draws **one** random private key, then walks the key space sequentially by repeatedly adding the secp256k1 generator point `G` to the running public key. The walk is done in **batches of 512** so that the whole batch shares a single elliptic-curve field inversion instead of one per key (see [Efficiency](#efficiency)). Every public key is hashed to its 20-byte `hash160` — the core of a P2PKH address — via SHA-256 then RIPEMD-160; on aarch64 this uses the ARMv8 SHA-256 instructions and a 4-wide NEON RIPEMD-160, and on x86_64 SHA-NI plus 4-wide SSE2 RIPEMD-160. Uncompressed P2PKH is checked by default. No Base58 encoding happens in the hot loop.
 
-A pre-calculated database of P2PKH Bitcoin addresses with a positive balance is included in this project; it is decoded once to raw `hash160` bytes at startup. Each generated `hash160` is looked up in that set, and on a match the private key, public key and address are written to `findings/hits.txt`.
+The funded-address set is downloaded with `./shell/plutus update-db` (or automatically after 30 hours). Each generated `hash160` is looked up in that snapshot, and on a match the private key, public key and address are written to `findings/hits.txt`.
 
 This program utilizes multithreading through `std::thread` (one worker per logical core by default; see `PLUTUS_THREADS`) to make concurrent calculations.
 

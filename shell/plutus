@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Single operator entry: install, start, stop, status, logs, upgrade.
+# Prefers systemd; falls back to shell/start.sh when no unit is installed.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+BIN="${PLUTUS_BIN:-$ROOT/target/release/plutus-rustus}"
+UNIT_NAME="plutus.service"
+
+load_env() {
+  if [[ -f "$ROOT/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT/.env"
+    set +a
+  fi
+  export PLUTUS_CONFIG="${PLUTUS_CONFIG:-$ROOT/config.toml}"
+}
+
+have_systemd_unit() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl cat "$UNIT_NAME" >/dev/null 2>&1
+}
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") <command>
+
+  install   copy config, build release, install systemd if sudo is available
+  start     start via systemd, or the shell supervisor
+  stop      stop systemd or the shell supervisor
+  status    live engine JSON (and systemd status when installed)
+  logs      follow journal or logs/plutus.log
+  doctor    check config, snapshot, notify wiring
+  upgrade   git pull, rebuild, restart
+  update-db download a fresh funded-address snapshot (engine already does this)
+
+docs: docs/DEPLOY.md
+EOF
+}
+
+cmd_install() {
+  git submodule update --init --recursive
+  if [[ ! -f "$ROOT/config.toml" ]]; then
+    cp "$ROOT/config.example.toml" "$ROOT/config.toml"
+    echo "wrote config.toml (profile=low)"
+  fi
+  if [[ ! -f "$ROOT/.env" ]]; then
+    cp "$ROOT/env.example" "$ROOT/.env"
+    echo "wrote .env — set PLUTUS_BARK_KEY and PLUTUS_NODE_NAME"
+  fi
+  mkdir -p "$ROOT/data" "$ROOT/findings" "$ROOT/logs"
+  echo "building release binary (native CPU)"
+  cargo rustc --release -- -C target-cpu=native
+  load_env
+  "$BIN" doctor || true
+  if [[ "$(id -u)" -eq 0 ]]; then
+    bash "$ROOT/shell/install-systemd.sh"
+    echo "start with: systemctl start plutus"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo bash "$ROOT/shell/install-systemd.sh"
+    echo "start with: sudo systemctl start plutus"
+  else
+    echo "no passwordless sudo; start with: $ROOT/shell/plutus start"
+    echo "later, systemd: sudo bash $ROOT/shell/install-systemd.sh"
+  fi
+  echo
+  echo "next: edit .env, then $ROOT/shell/plutus doctor && $ROOT/shell/plutus start"
+}
+
+cmd_start() {
+  load_env
+  if [[ ! -x "$BIN" ]]; then
+    echo "missing $BIN — run: $ROOT/shell/plutus install" >&2
+    exit 1
+  fi
+  if have_systemd_unit; then
+    systemctl start "$UNIT_NAME"
+    systemctl --no-pager --full status "$UNIT_NAME" | head -n 12
+    return
+  fi
+  bash "$ROOT/shell/start.sh"
+}
+
+cmd_stop() {
+  if have_systemd_unit && systemctl is-active --quiet "$UNIT_NAME"; then
+    systemctl stop "$UNIT_NAME"
+    echo "stopped systemd unit $UNIT_NAME"
+    return
+  fi
+  bash "$ROOT/shell/stop.sh"
+}
+
+cmd_status() {
+  if have_systemd_unit; then
+    systemctl --no-pager --full status "$UNIT_NAME" | head -n 16 || true
+    echo
+  fi
+  bash "$ROOT/shell/status.sh"
+}
+
+cmd_logs() {
+  if have_systemd_unit; then
+    exec journalctl -u "$UNIT_NAME" -f -n 100
+  fi
+  exec bash "$ROOT/shell/logs.sh"
+}
+
+cmd_doctor() {
+  load_env
+  "$BIN" doctor
+}
+
+cmd_upgrade() {
+  git pull --ff-only
+  git submodule update --init --recursive
+  cargo rustc --release -- -C target-cpu=native
+  if have_systemd_unit; then
+    systemctl restart "$UNIT_NAME"
+    echo "restarted $UNIT_NAME"
+  else
+    bash "$ROOT/shell/stop.sh" || true
+    bash "$ROOT/shell/start.sh"
+  fi
+}
+
+cmd_update_db() {
+  load_env
+  "$BIN" data update
+  if have_systemd_unit; then
+    systemctl try-restart "$UNIT_NAME"
+  fi
+}
+
+case "${1:-}" in
+  install) cmd_install ;;
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  status) cmd_status ;;
+  logs) cmd_logs ;;
+  doctor) cmd_doctor ;;
+  upgrade) cmd_upgrade ;;
+  update-db) cmd_update_db ;;
+  -h | --help | help | "") usage ;;
+  *)
+    echo "unknown command: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

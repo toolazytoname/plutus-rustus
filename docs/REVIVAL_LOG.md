@@ -1,5 +1,13 @@
 # Revival Log
 
+## 2026-08-14 — single `main` branch and one-command deploy
+
+- Repository default is `main`. Install with `./install.sh`; day-to-day ops
+  are `./shell/plutus start|stop|status|logs|upgrade`.
+- systemd supervises the process (CPUQuota + MemoryMax + journal). The engine
+  still refreshes the funded-address snapshot itself; the update timer stays
+  off by default.
+
 ## 2026-08-13 — mmap lookup: Bloom + on-disk buckets (~85MB)
 
 - Default `lookup = "mmap"`: Bloom + 64K-bucket index in RAM, hash160 table on

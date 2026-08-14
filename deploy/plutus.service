@@ -13,11 +13,12 @@ Restart=on-failure
 RestartSec=3
 Nice=10
 CPUQuota=40%
-# MemoryMax=1500M
+MemoryMax=512M
 LimitNOFILE=65535
 
-StandardOutput=append:/opt/plutus-rustus/logs/plutus.log
-StandardError=append:/opt/plutus-rustus/logs/plutus.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=plutus
 
 [Install]
 WantedBy=multi-user.target
