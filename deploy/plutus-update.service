@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh Plutus-Rustus funded-address snapshot
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/plutus-rustus
+EnvironmentFile=-/opt/plutus-rustus/.env
+Environment=PLUTUS_CONFIG=/opt/plutus-rustus/config.toml
+# Only enable this timer when config auto_update = false. Otherwise the
+# running engine already refreshes after dropping its in-memory set.
+ExecStart=/opt/plutus-rustus/target/release/plutus-rustus data update
+ExecStartPost=/bin/systemctl try-restart plutus.service

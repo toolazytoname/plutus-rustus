@@ -1,0 +1,23 @@
+[Unit]
+Description=Plutus-Rustus funded-address collider
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/plutus-rustus
+EnvironmentFile=-/opt/plutus-rustus/.env
+Environment=PLUTUS_CONFIG=/opt/plutus-rustus/config.toml
+ExecStart=/opt/plutus-rustus/target/release/plutus-rustus run
+Restart=on-failure
+RestartSec=3
+Nice=10
+CPUQuota=40%
+# MemoryMax=1500M
+LimitNOFILE=65535
+
+StandardOutput=append:/opt/plutus-rustus/logs/plutus.log
+StandardError=append:/opt/plutus-rustus/logs/plutus.log
+
+[Install]
+WantedBy=multi-user.target

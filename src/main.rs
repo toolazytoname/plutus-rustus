@@ -1,336 +1,209 @@
-extern crate bitcoin;
-extern crate num_cpus;
-extern crate secp256k1;
-extern crate hostname;
+use std::fs;
+use std::io::{self, Write};
+use std::path::Path;
+use std::process::ExitCode;
 
-use std::fs::OpenOptions;
-use std::sync::{Arc, RwLock};
-use std::{
-    fs::File,
-    io::Write,
-    time::Instant,
-};
-use bitcoin::Address;
-use bitcoin::{network::constants::Network, PrivateKey, PublicKey};
-use secp256k1::{rand, Secp256k1, SecretKey};
-use tokio::task;
-use fastbloom_rs::{BloomFilter, FilterBuilder, Membership};
-use csv::ReaderBuilder;
-use rusqlite::{Connection, Result};
-use rusqlite::params;
+use clap::{Parser, Subcommand};
 
-use std::env;
-use reqwest::header::{CONTENT_TYPE, CONTENT_LENGTH};
-use serde_urlencoded;
-use tokio;
-use std::net::IpAddr;
-use log::{self, warn};
-use log::{debug, error, log_enabled, info, Level};
+use plutus_rustus::config::{self, Config};
+use plutus_rustus::db;
+use plutus_rustus::engine::{self, RunOutcome};
+use plutus_rustus::notify::Notifier;
 
+#[derive(Parser)]
+#[command(
+    name = "plutus-rustus",
+    about = "Funded-address key-space collider with a durable local snapshot."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
+#[derive(Subcommand)]
+enum Command {
+    /// Run the collider (default if no subcommand is given).
+    Run,
+    /// Check config, snapshot, write paths, RAM hints, and notifier wiring.
+    Doctor,
+    /// Send one Bark/webhook test that contains no secrets.
+    NotifyTest,
+    /// Snapshot import, refresh, and inspection.
+    Data {
+        #[command(subcommand)]
+        command: DataCommand,
+    },
+}
 
+#[derive(Subcommand)]
+enum DataCommand {
+    /// Convert bundled pickle slices into the binary snapshot.
+    Prepare,
+    /// Download the latest funded-address dump and atomically replace the snapshot.
+    Update {
+        #[arg(long)]
+        source_url: Option<String>,
+    },
+    /// Print snapshot header fields.
+    Inspect,
+}
 
-
-
-const TSV_DIR: &str = "blockchair_bitcoin_addresses_and_balance_LATEST.tsv";// 2024_4_18
-const DB_DIR: &str = "bitcoin.db";
-
-
-#[tokio::main]
-async fn main() {
-     // 注意，env_logger 必须尽可能早的初始化
-    env_logger::init();
-    check_and_create_file();
-    let timer = Instant::now();
-    //check sqlite
-    let load_tsv_result = load_address_and_balance_in_tsv();
-    info!("Load tsv completed in {:.2?};result is {:?}",timer.elapsed(),load_tsv_result);
-    
-    let filter:BloomFilter = load_bloom_in_sqlite(DB_DIR);
-    info!("Create Bloom completed in {:.2?}",timer.elapsed());
-
-    // single thread version of processing
-    // process(&database);
-
-    // Multithread version of processing using tokio
-    // atomic reference counting of database
-    let filter_ = Arc::new(RwLock::new(filter));
-    //get number of logical cores
-    let num_cores = num_cpus::get();
-    // let num_cores = 2;
-    info!("Running on {} logical cores", num_cores);
-    //run process on all available cores
-    for _ in 0..num_cores {
-        let clone_filter_ = Arc::clone(&filter_);
-        task::spawn_blocking(move || {
-            let current_core = std::thread::current().id();
-            info!("Core {:?} started", current_core);
-            let fl = clone_filter_.read().unwrap();
-            process(&fl);
-        });
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    let cfg = config::load();
+    let result = match cli.command.unwrap_or(Command::Run) {
+        Command::Run => match engine::run(&cfg) {
+            Ok(RunOutcome::Stopped) => Ok(()),
+            Ok(RunOutcome::Reload) => return ExitCode::from(engine::RELOAD_EXIT),
+            Err(error) => Err(error),
+        },
+        Command::Doctor => doctor(&cfg),
+        Command::NotifyTest => notify_test(&cfg),
+        Command::Data {
+            command: DataCommand::Prepare,
+        } => data_prepare(&cfg),
+        Command::Data {
+            command: DataCommand::Update { source_url },
+        } => data_update(&cfg, source_url),
+        Command::Data {
+            command: DataCommand::Inspect,
+        } => data_inspect(&cfg),
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("plutus-rustus: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
-fn load_address_and_balance_in_tsv() -> Result<(), Box<dyn std::error::Error>> {
-    if !std::path::Path::new(TSV_DIR).exists(){
-        info!("tsv file not found in {}",TSV_DIR);
-        // return Err("tsv file not found".into());
-    }
-    //check if db file exists
-    
-    if std::path::Path::new(DB_DIR).exists(){
-        info!("db file already exists in {}",DB_DIR);
-        let conn = Connection::open(DB_DIR)?;
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM btc_addresses", [], |row| row.get(0))?;
-        info!("db already exists in {},Total number of rows in btc_addresses table: {}", DB_DIR,count);
-        return Ok(());
-    }
-    info!("Create db in {} ",DB_DIR);
-    info!("Create table ");
-    let mut conn = Connection::open(DB_DIR)?;
-    //set journal_mode = OFF
-    // conn.execute("PRAGMA journal_mode = OFF", [])?;
-    // conn.execute("PRAGMA synchronous = 0", [])?;
+fn doctor(cfg: &Config) -> Result<(), String> {
+    let mut ok = true;
+    let threads = config::worker_count(cfg);
+    println!("node={}", config::node_name());
+    println!("threads={threads}");
+    println!("check_uncompressed={}", cfg.check_uncompressed);
+    println!("cpu_percent={}", cfg.cpu_percent);
+    println!("lookup={}", cfg.lookup.as_str());
+    println!("bits_per_key={}", cfg.bits_per_key);
+    println!("simd={}", engine::simd_name());
+    println!("auto_update={}", cfg.auto_update);
+    println!("max_snapshot_age_hours={}", cfg.max_snapshot_age_hours);
+    println!("heartbeat_minutes={}", cfg.heartbeat_minutes);
+    println!("snapshot={}", cfg.snapshot.display());
+    println!("pickle_dir={}", cfg.pickle_dir.display());
+    println!("findings={}", cfg.findings.display());
+    println!("status={}", cfg.status.display());
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS btc_addresses (address TEXT PRIMARY KEY)",
-        [],
-    )?;
-    info!("Insert data into table ");
-    let tx = conn.transaction().unwrap();
-    let file = File::open(TSV_DIR).expect("couldn't open tsv file");
-    let mut rdr = ReaderBuilder::new().delimiter(b'\t').from_reader(file);
-    for result in rdr.records() {
-        let record = result?;
-        let address = record.get(0).unwrap();
-        // let balance = record.get(1).unwrap();
-        // info!("{:?}", record);
-        // to save space, we only save address that starts with 1
-        if address.starts_with("1") {
-            tx.execute(
-                "INSERT INTO btc_addresses (address) VALUES (?1)",
-                &[&address],
-            )?;    
+    let ram_hint_mb = config::ram_hint_mb(cfg);
+    println!(
+        "ram_hint_mb~{ram_hint_mb} (mmap keeps bloom+index in RAM; the 20-byte table stays on disk)"
+    );
+    if threads > 1 && cfg.cpu_percent >= 90 {
+        println!("hint=weak VPS: set engine.profile=\"low\" or PLUTUS_CPU_PERCENT=40");
+    }
+
+    match writable_parent(&cfg.data_dir) {
+        Ok(()) => println!("data_dir=writable"),
+        Err(error) => {
+            println!("data_dir=ERROR {error}");
+            ok = false;
         }
     }
-    let tx_result = tx.commit();
-    info!("Insert data into table end.{:?}",tx_result);
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM btc_addresses", [], |row| row.get(0))?;
-    info!("Total number of rows in btc_addresses table: {}",count);
-    info!("crreate index.");
-    // 创建 address 字段的索引
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_address ON btc_addresses (address)",
-        [],
+    if let Some(parent) = cfg.findings.parent() {
+        match writable_parent(parent) {
+            Ok(()) => println!("findings_dir=writable"),
+            Err(error) => {
+                println!("findings_dir=ERROR {error}");
+                ok = false;
+            }
+        }
+    }
+
+    if cfg.snapshot.is_file() {
+        match db::inspect_snapshot(&cfg.snapshot) {
+            Ok(info) => println!("{info}"),
+            Err(error) => {
+                println!("snapshot=ERROR {error}");
+                ok = false;
+            }
+        }
+    } else if cfg.pickle_dir.is_dir() {
+        println!("snapshot=missing (pickle fallback present; first run will migrate)");
+    } else {
+        println!("snapshot=missing (run `plutus-rustus data update` or `data prepare`)");
+        ok = false;
+    }
+
+    let notifier = Notifier::from_config(&cfg.notify);
+    println!("notify={}", notifier.configured_without_secret());
+    if ok {
+        println!("doctor=ok");
+        Ok(())
+    } else {
+        Err("doctor found problems".into())
+    }
+}
+
+fn notify_test(cfg: &Config) -> Result<(), String> {
+    let notifier = Notifier::from_config(&cfg.notify);
+    notifier.send_result(
+        "Plutus 连通测试",
+        &format!(
+            "node={} provider={}",
+            config::node_name(),
+            notifier.configured_without_secret()
+        ),
     )?;
-    info!("load_address_and_balance_in_tsv end.");
+    println!(
+        "notify-test sent via {}",
+        notifier.configured_without_secret()
+    );
     Ok(())
 }
 
-fn load_bloom_in_sqlite(sqlite_db_path: &str) -> BloomFilter {
-    let conn = Connection::open(sqlite_db_path).unwrap();
-    // 53_273_531 full
-    // 23_072_442 start with 1
-    let mut addresses = FilterBuilder::new(23_072_442, 0.000_001).build_bloom_filter();
-    let mut stmt = conn.prepare("SELECT address FROM btc_addresses").unwrap();
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
-    for row in rows {
-        let address = row.unwrap();
-        addresses.add(address.as_bytes());
+fn writable_parent(path: &Path) -> io::Result<()> {
+    if path.as_os_str().is_empty() {
+        return Ok(());
     }
-    info!("load_bloom_in_sqlite end.");
-    addresses
-}
-
-fn check_and_create_file() {
-    let file_path = found_file_path();
-    if !std::path::Path::new(&file_path).exists() {
-        let _file = std::fs::File::create(&file_path).unwrap();
-        // You can write some initial content to the file here if needed
-        info!("Created new plutus.txt file.");
-    } else {
-        info!("plutus.txt file already exists.");
+    fs::create_dir_all(path)?;
+    let probe = path.join(".plutus-write-probe");
+    {
+        let mut file = fs::File::create(&probe)?;
+        file.write_all(b"ok")?;
     }
+    fs::remove_file(probe)?;
+    Ok(())
 }
 
-// write data to file
-fn write_to_file(data: &str, file_name: &str) {
-    let mut file = OpenOptions::new()
-        .append(true)
-        .open(file_name)
-        .expect("Unable to open file");
-    file.write_all(data.as_bytes()).unwrap();
+fn data_prepare(cfg: &Config) -> Result<(), String> {
+    let report = db::prepare_from_pickles(cfg).map_err(|e| e.to_string())?;
+    println!(
+        "Prepared {} unique hash160s in {:.2?} -> {} ({} skipped)",
+        report.db.len(),
+        report.elapsed,
+        cfg.snapshot.display(),
+        report.skipped
+    );
+    Ok(())
 }
 
-// function that checks address in database and if finds it, writes data to file
-fn check_address(
-    private_key: &PrivateKey,
-    secret_key: SecretKey,
-    address: &Address,
-    filter: &BloomFilter,
-    public_key: PublicKey) {
-    //check Bloom first
-    // let test_address = "11111111111111111111HV1eYjP".to_string();
-    
-    let bloom_may_contain = filter.contains(address.to_string().as_bytes());
-    if  bloom_may_contain{
-
-        let data = format!(
-            "secret_key:{}\n private_key:{} \n public_key:{} \naddress:{}\n",
-            secret_key.display_secret(),
-            private_key.to_wif(),
-            public_key.to_string(),
-            address.to_string().as_str(),
-        );
-        info!("Bloom Found data: {}", data);
-
-        let conn = Connection::open(DB_DIR).unwrap();
-        let mut stmt = conn.prepare("SELECT address FROM btc_addresses WHERE address = ?").unwrap();
-        let mut rows = stmt.query(params![address.to_string()]).unwrap();
-    
-        if let Some(_) = rows.next().unwrap() {
-            // let balance: i64 = row.get(0).unwrap();
-            let data = format!(
-                "secret_key:{}\n private_key:{} \n public_key:{} \naddress:{}\n  \n\n",
-                secret_key.display_secret(),
-                private_key.to_wif(),
-                public_key.to_string(),
-                address.to_string().as_str()
-            );
-            warn!("sqlite Found data: {}", data);
-            write_to_file(data.as_str(), found_file_path().as_str());
-            let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
-            let host_id = get_host_id_string();
-            let content = format!("Congraturations\nfrom {}", host_id);
-            let _ = sc_send("Good News!".to_string(), content, key);
-        } else {
-            info!("Address {} does not exist in the database.\n\n", address);
-        }
-        
-    }
+fn data_update(cfg: &Config, source_url: Option<String>) -> Result<(), String> {
+    let url = source_url.unwrap_or_else(|| cfg.source_url.clone());
+    let report = db::update_from_url(cfg, &url).map_err(|e| e.to_string())?;
+    println!(
+        "Updated snapshot {} with {} unique hash160s in {:.2?} ({} skipped). Restart the engine to load it.",
+        cfg.snapshot.display(),
+        report.db.len(),
+        report.elapsed,
+        report.skipped
+    );
+    Ok(())
 }
 
-// get found.txt file path
-fn found_file_path() -> String {
-    let mut path = std::env::current_dir().unwrap();
-    path.push("plutus.txt");
-    path.to_str().unwrap().to_string()
+fn data_inspect(cfg: &Config) -> Result<(), String> {
+    let info = db::inspect_snapshot(&cfg.snapshot).map_err(|e| e.to_string())?;
+    println!("{info}");
+    Ok(())
 }
-
-// infinite loop processing function
-//hashmap
-// Core ThreadId(11) checked 100000 addresses in 1.90, iter/sec: 52702.73110164057
-// Core ThreadId(10) checked 100000 addresses in 1.90, iter/sec: 52628.38545693889
-//Bloom
- // Core ThreadId(5) checked 100000 addresses in 1.98, iter/sec: 50403.73601725324
- // Core ThreadId(2) checked 100000 addresses in 1.99, iter/sec: 50322.380897775176
-
-//  Core ThreadId(4) checked 100000 addresses in 3.05, iter/sec: 32773.38471749095
-fn process(filter: &BloomFilter) {
-    // let mut count: f64 = 0.0;
-    // let start = Instant::now();
-    loop {
-        // Generating secret key
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::new(&mut rand::thread_rng());
-        let private_key = PrivateKey::new(secret_key, Network::Bitcoin);
-        let public_key = PublicKey::from_private_key(&secp, &private_key);
-        // Generate pay-to-pubkey-hash (P2PKH) wallet address
-        let address = Address::p2pkh(&public_key, Network::Bitcoin);
-    // let address = "11111111111111111111HV1eYjP".to_string();
-        // check address against database
-        check_address(&private_key, secret_key, &address, filter, public_key);
-
-        // FOR BENCHMARKING ONLY! (has to be commented out for performance gain)
-        // count += 1.0;
-        // if count % 100000.0 == 0.0 {
-        //     let current_core = std::thread::current().id();
-        //     let elapsed = start.elapsed().as_secs_f64();
-        //     info!(
-        //         "Core {:?} checked {} addresses in {:.2?}, iter/sec: {}",
-        //         current_core,
-        //         count,
-        //         elapsed,
-        //         count / elapsed
-        //     );
-        // }
-    }
-}
-
-/* sc_send 发送消息到Server酱
-```
- */
-async fn sc_send(text: String, desp: String, key: String) -> Result<String, Box<dyn std::error::Error>> {
-    let params = [("text", text), ("desp", desp)];
-    let post_data = serde_urlencoded::to_string(params)?;
-    let url = format!("https://sctapi.ftqq.com/{}.send", key);
-    let client = reqwest::Client::new();
-    let res = client.post(&url)
-        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .header(CONTENT_LENGTH, post_data.len() as u64)
-        .body(post_data)
-        .send()
-        .await?;
-    let data = res.text().await?;
-    error!("Server酱 推送结果: {}", data);
-    Ok(data)
-}
-
-fn get_host_id_string() -> String {
-    // 获取当前主机的主机名
-    let host_name = match hostname::get() {
-        Ok(name) => name.to_string_lossy().into_owned(),
-        Err(_) => String::from("Unknown"),
-    };
-
-    // 获取当前主机的 IP 地址
-    let ip_addr = match get_local_ip() {
-        Some(ip) => ip.to_string(),
-        None => String::from("Unknown"),
-    };
-
-    // 将 IP 地址和主机名拼接成一个字符串
-    let combined_string = format!("Host: {} IP: {}", host_name, ip_addr);
-    info!("{}", combined_string);
-    combined_string
-}
-
-// 获取本地 IP 地址
-fn get_local_ip() -> Option<IpAddr> {
-    let socket = match std::net::UdpSocket::bind("0.0.0.0:0") {
-        Ok(s) => s,
-        Err(_) => return None,
-    };
-    socket.connect("8.8.8.8:80").ok()?;
-    Some(socket.local_addr().ok()?.ip())
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_sc_send() {
-        let key = env::var("SENDKEY").unwrap_or_else(|_| panic!("Error: SENDKEY environment variable not set"));
-        info!("SENDKEY: {}", key);
-        let host_id = get_host_id_string();
-        info!("HOST_ID: {}", host_id);
-        let content = format!("Congraturations\nfrom {}", host_id);
-        info!("CONTENT: {}", content);
-        // let _ = sc_send("Good News!".to_string(), content, key)
-
-        let text = "Good News!".to_string();
-        // let desp = "Test Description".to_string();
-        // let key = "YOUR_SENDKEY_HERE".to_string(); // 请替换为您的实际 SendKey
-        
-        // 调用 sc_send 函数进行测试
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(sc_send(text, content, key));
-
-        // 检查测试结果
-        assert!(result.is_ok(), "sc_send function test failed");
-    }
-}
-
-// 这里是您现有的代码

@@ -1,7 +1,17 @@
 target
 .DS_Store
 .vscode
-Cargo.lock
+
+# Runtime state and operator-owned inputs. Never commit these artifacts.
+.env
+config.toml
+watchlist.txt
+data/
+findings/
+logs/
+plutus.txt
 *.db
 *.tsv
-shell
+*.tsv.gz
+*.gz
+*.log

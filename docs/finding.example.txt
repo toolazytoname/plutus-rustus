@@ -1,0 +1,9 @@
+# Runtime findings are never tracked. This file documents the safe format.
+#
+# timestamp: 2026-08-11T00:00:00Z
+# event: watchlist-membership-changed
+# address: example-address-redacted
+# snapshot_id: example-snapshot
+#
+# Do not write private keys, WIFs, access tokens, or notification credentials to
+# a finding file.

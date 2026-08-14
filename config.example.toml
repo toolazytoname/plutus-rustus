@@ -1,0 +1,36 @@
+# Copy this file to config.toml. config.toml is intentionally ignored by Git.
+
+[engine]
+# low      = 1 thread, ~40% of that core, mmap lookup, compressed-only (~75MB)
+# balanced = all cores at 70% CPU, mmap lookup, uncompressed on (~85MB)
+# full     = all cores, mmap lookup, uncompressed on (~100MB)
+profile = "low"
+# Optional overrides after the profile:
+# threads = 1
+# cpu_percent = 40
+# check_uncompressed = false
+# lookup = "mmap"   # mmap (default) | sorted (~900MB) | hash (~1.3GB)
+# bits_per_key = 14 # bloom size; 14/16/18 for low/balanced/full
+walk_span = 1073741824
+
+[data]
+directory = "./data"
+snapshot = "./data/addresses.h160"
+pickle_dir = "./database/JUL_12_2026"
+source_url = "http://addresses.loyce.club/Bitcoin_addresses_LATEST.txt.gz"
+# Engine drops RAM, downloads, then reloads. Do not enable the systemd update
+# timer at the same time.
+auto_update = true
+max_snapshot_age_hours = 30
+
+[run]
+findings = "./findings/hits.txt"
+status = "./data/status.json"
+heartbeat_minutes = 1440
+
+[notify]
+# bark | webhook | serverchan | disabled
+provider = "bark"
+token_env = "PLUTUS_BARK_KEY"
+bark_server_env = "PLUTUS_BARK_SERVER"
+webhook_url_env = "PLUTUS_WEBHOOK_URL"

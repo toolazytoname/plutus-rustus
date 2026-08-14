@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [master, codex/**]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: format, lint, and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # This repository currently permits only owner-controlled Actions. Fetch
+      # the exact SHA with shell commands rather than depending on checkout.
+      - name: Fetch source and submodule
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          git init .
+          git remote add origin "$SERVER_URL/$REPOSITORY.git"
+          git fetch --depth=1 origin "$SHA"
+          git checkout --detach FETCH_HEAD
+          git submodule update --init --recursive
+
+      - name: Verify formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run deterministic tests
+        run: cargo test --locked --all-targets

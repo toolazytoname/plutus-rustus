@@ -1,0 +1,9 @@
+/opt/plutus-rustus/logs/plutus.log {
+    weekly
+    rotate 8
+    size 50M
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
