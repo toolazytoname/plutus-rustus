@@ -1,6 +1,6 @@
 [package]
 name = "plutus-rustus"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["a137x"]
 edition = "2021"
 default-run = "plutus-rustus"

@@ -43,13 +43,13 @@ cp "$ROOT/deploy/plutus-update.service" "$PREFIX/deploy/plutus-update.service"
 cp "$ROOT/deploy/plutus-update.timer" "$PREFIX/deploy/plutus-update.timer"
 
 mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"
 tar -C "$STAGE" -czf "${OUT}/${NAME}.tar.gz" "$NAME"
 
-cd "$OUT"
 if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "${NAME}.tar.gz" >"${NAME}.tar.gz.sha256"
+  (cd "$OUT" && sha256sum "${NAME}.tar.gz" >"${NAME}.tar.gz.sha256")
 else
-  shasum -a 256 "${NAME}.tar.gz" >"${NAME}.tar.gz.sha256"
+  (cd "$OUT" && shasum -a 256 "${NAME}.tar.gz" >"${NAME}.tar.gz.sha256")
 fi
 
 echo "wrote ${OUT}/${NAME}.tar.gz"

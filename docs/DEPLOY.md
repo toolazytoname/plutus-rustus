@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/in
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh \
-  | bash -s -- --version=v0.2.1 --profile=low
+  | bash -s -- --version=v0.2.2 --profile=low
 ```
 
 `main` 上每次 CI 通过会刷新 `nightly` prerelease：`--nightly` 或 `--version=nightly`。没有正式 tag 时，默认 `latest` 会回落到 nightly。
@@ -86,4 +86,4 @@ iOS 装 [Bark](https://github.com/Finb/Bark)，设备密钥放到 `PLUTUS_BARK_K
 - `plutus-rustus-macos-aarch64.tar.gz`
 - `plutus-rustus-macos-x86_64.tar.gz`
 
-每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.1 && git push origin v0.2.1`。
+每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.2 && git push origin v0.2.2`。
