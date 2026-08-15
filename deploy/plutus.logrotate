@@ -1,7 +1,7 @@
-/opt/plutus-rustus/logs/plutus.log {
+/opt/plutus-rustus/logs/goldpan.log {
     weekly
-    rotate 8
-    size 50M
+    rotate 3
+    size 8M
     missingok
     notifempty
     compress

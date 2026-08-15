@@ -10,7 +10,7 @@ cd "$ROOT"
 source "$ROOT/shell/common.sh"
 
 BIN="$(plutus_resolve_bin "$ROOT" || true)"
-UNIT_NAME="plutus.service"
+UNIT_NAME="goldpan.service"
 PROFILE="${PLUTUS_PROFILE:-low}"
 PROFILE_SET=0
 FETCH_DB=0
@@ -41,7 +41,7 @@ usage: $(basename "$0") <command>
   start     start via systemd, or the shell supervisor
   stop      stop systemd or the shell supervisor
   status    live engine JSON (and systemd status when installed)
-  logs      follow journal or logs/plutus.log
+  logs      follow journal or logs/goldpan.log
   doctor    check config, snapshot, notify wiring
   upgrade   download the latest Release binary and restart
   update-db download a fresh funded-address snapshot
@@ -152,8 +152,7 @@ cmd_install() {
     fi
     echo "building release binary (native CPU)"
     cargo rustc --release -- -C target-cpu=native
-    mkdir -p "$ROOT/bin"
-    cp "$ROOT/target/release/plutus-rustus" "$ROOT/bin/plutus-rustus"
+    plutus_install_bin "$ROOT/target/release/plutus-rustus" "$ROOT/bin"
   fi
 
   require_bin

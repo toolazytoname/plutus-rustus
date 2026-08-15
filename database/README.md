@@ -6,7 +6,7 @@ and build the snapshot with:
 ```bash
 ~/plutus-rustus/shell/plutus update-db
 # same as:
-~/plutus-rustus/bin/plutus-rustus data update
+~/plutus-rustus/bin/goldpan data update
 ```
 
 That pulls [Loyce Club](http://addresses.loyce.club/)'s

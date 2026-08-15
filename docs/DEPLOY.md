@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/in
 | 参数 | 默认 | 作用 |
 |---|---|---|
 | `--profile=low\|balanced\|full` | `low` | 线程 / CPU / 未压缩地址 |
-| `--dir PATH` | `~/plutus-rustus`（root 则 `/opt/plutus-rustus`） | 安装目录 |
+| `--dir PATH` | `~/plutus-rustus`（root 则 `/opt/plutus-rustus`） | 安装目录；进程名是 `goldpan` |
 | `--version` | `latest` | Release tag；`latest` 没有则用 `nightly` |
 | `--fetch-db` | 关 | 现在就下载全量地址库（约 1.4GB） |
 | `--start` | 关 | 装完直接启动 |
@@ -48,7 +48,7 @@ Linux 二进制是 **musl 静态链接**，旧版 glibc 的 Debian/Ubuntu VPS �
 ~/plutus-rustus/shell/plutus upgrade
 ```
 
-有 sudo 时会装 `plutus.service`（崩溃自动拉起、`CPUQuota` 随 profile、`MemoryMax=256M`、日志在 journal）。没有 sudo 就用仓库里的 shell 看门狗。
+有 sudo 时会装 `goldpan.service`（崩溃自动拉起、开机自启、`CPUQuota` 随 profile、`MemoryMax=256M`、日志在 journal）。没有 sudo 就用仓库里的 shell 看门狗。进程和 tarball 叫 `goldpan`，安装目录仍可以是 `~/plutus-rustus`。
 
 ## 档位
 
@@ -62,7 +62,7 @@ Linux 二进制是 **musl 静态链接**，旧版 glibc 的 Debian/Ubuntu VPS �
 
 ## 地址库
 
-默认 `auto_update=true`：快照超过 30 小时，引擎丢掉 Bloom、下载、再继续。不要再开 `plutus-update.timer`。
+默认 `auto_update=true`：快照超过 30 小时，引擎丢掉 Bloom、下载、再继续。不要再开 `goldpan-update.timer`。
 
 第一次没带 `--fetch-db` 的话，启动前跑一次：
 
@@ -81,9 +81,9 @@ iOS 装 [Bark](https://github.com/Finb/Bark)，设备密钥放到 `PLUTUS_BARK_K
 
 `.github/workflows/ci.yml`：PR 只跑 format / clippy / test。push 到 `main` 或打 `v*` tag 时，verify 通过后按四个 target 出包并上传 Release：
 
-- `plutus-rustus-linux-x86_64.tar.gz`（musl）
-- `plutus-rustus-linux-aarch64.tar.gz`（musl）
-- `plutus-rustus-macos-aarch64.tar.gz`
-- `plutus-rustus-macos-x86_64.tar.gz`
+- `goldpan-linux-x86_64.tar.gz`（musl）
+- `goldpan-linux-aarch64.tar.gz`（musl）
+- `goldpan-macos-aarch64.tar.gz`
+- `goldpan-macos-x86_64.tar.gz`
 
 每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.2 && git push origin v0.2.2`。

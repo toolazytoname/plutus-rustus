@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG" \
-            "dist/plutus-rustus-${ARTIFACT}.tar.gz" \
-            "dist/plutus-rustus-${ARTIFACT}.tar.gz.sha256" \
+            "dist/goldpan-${ARTIFACT}.tar.gz" \
+            "dist/goldpan-${ARTIFACT}.tar.gz.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber

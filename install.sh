@@ -29,6 +29,7 @@ usage: install.sh [--profile=low|balanced|full] [--dir PATH] [--version=latest|n
 
   --profile      low (default, ~75MB) | balanced | full
   --dir          install path (default: ~/plutus-rustus, or /opt/plutus-rustus as root)
+                 deployed binary is named goldpan (ps / systemd / tarball)
   --version      GitHub Release tag (default: latest, then nightly)
   --fetch-db     download the funded-address snapshot now (~1.4GB)
   --start        start the collider after install
@@ -139,9 +140,8 @@ download() {
 }
 
 install_binary() {
-  local artifact name tmp url base
+  local artifact name tmp url base tree src_bin
   artifact="$(detect_artifact)"
-  name="plutus-rustus-${artifact}.tar.gz"
   need_cmd curl || {
     echo "need curl" >&2
     exit 1
@@ -157,32 +157,65 @@ install_binary() {
   trap 'rm -rf "$tmp"' RETURN
 
   base="https://github.com/${GITHUB}/releases"
+  try_download() {
+    local n="$1"
+    local u="$2"
+    if download "$tmp/$n" "$u"; then
+      name="$n"
+      url="$u"
+      return 0
+    fi
+    return 1
+  }
+
   if [[ "$VERSION" == "latest" ]]; then
-    if download "$tmp/$name" "${base}/latest/download/${name}"; then
-      url="${base}/latest/download/${name}"
-    else
-      echo "no stable release yet, trying nightly"
+    try_download "goldpan-${artifact}.tar.gz" "${base}/latest/download/goldpan-${artifact}.tar.gz" \
+      || try_download "goldpan-${artifact}.tar.gz" "${base}/download/nightly/goldpan-${artifact}.tar.gz" \
+      || try_download "plutus-rustus-${artifact}.tar.gz" "${base}/latest/download/plutus-rustus-${artifact}.tar.gz" \
+      || try_download "plutus-rustus-${artifact}.tar.gz" "${base}/download/nightly/plutus-rustus-${artifact}.tar.gz" \
+      || {
+        echo "no goldpan or plutus-rustus release for $artifact" >&2
+        exit 1
+      }
+    if [[ "$url" == *"/nightly/"* ]]; then
       VERSION=nightly
-      download "$tmp/$name" "${base}/download/nightly/${name}"
-      url="${base}/download/nightly/${name}"
     fi
   else
-    download "$tmp/$name" "${base}/download/${VERSION}/${name}"
-    url="${base}/download/${VERSION}/${name}"
+    try_download "goldpan-${artifact}.tar.gz" "${base}/download/${VERSION}/goldpan-${artifact}.tar.gz" \
+      || try_download "plutus-rustus-${artifact}.tar.gz" "${base}/download/${VERSION}/plutus-rustus-${artifact}.tar.gz" \
+      || {
+        echo "no goldpan or plutus-rustus tarball for $VERSION $artifact" >&2
+        exit 1
+      }
   fi
   download "$tmp/${name}.sha256" "${url}.sha256"
   (cd "$tmp" && sha256_check "${name}.sha256")
 
   tar -xzf "$tmp/$name" -C "$tmp"
-  local tree="$tmp/plutus-rustus-${artifact}"
-  [[ -d "$tree" ]] || {
-    echo "tarball had no payload at $tree" >&2
+  tree=""
+  for tree in "$tmp/goldpan-${artifact}" "$tmp/plutus-rustus-${artifact}"; do
+    [[ -d "$tree" ]] && break
+    tree=""
+  done
+  [[ -n "$tree" ]] || {
+    echo "tarball had no payload directory" >&2
+    exit 1
+  }
+
+  src_bin=""
+  for src_bin in "$tree/bin/goldpan" "$tree/bin/plutus-rustus"; do
+    [[ -f "$src_bin" ]] && break
+    src_bin=""
+  done
+  [[ -n "$src_bin" ]] || {
+    echo "tarball had no engine binary" >&2
     exit 1
   }
 
   mkdir -p "$DEST/bin" "$DEST/shell" "$DEST/deploy" "$DEST/docs" "$DEST/data" "$DEST/findings" "$DEST/logs"
-  cp "$tree/bin/plutus-rustus" "$DEST/bin/plutus-rustus"
-  chmod +x "$DEST/bin/plutus-rustus"
+  cp "$src_bin" "$DEST/bin/goldpan"
+  chmod +x "$DEST/bin/goldpan"
+  rm -f "$DEST/bin/plutus-rustus"
   cp -R "$tree/shell/." "$DEST/shell/"
   chmod +x "$DEST/shell/"*
   cp -R "$tree/deploy/." "$DEST/deploy/"
@@ -191,7 +224,7 @@ install_binary() {
   cp "$tree/docs/DEPLOY.md" "$DEST/docs/DEPLOY.md" 2>/dev/null || true
   cp "$tree/install.sh" "$DEST/install.sh"
   chmod +x "$DEST/install.sh" "$DEST/shell/plutus"
-  echo "installed $DEST/bin/plutus-rustus ($artifact, $VERSION)"
+  echo "installed $DEST/bin/goldpan ($artifact, $VERSION)"
 }
 
 ensure_tools() {

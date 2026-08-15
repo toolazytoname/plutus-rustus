@@ -8,7 +8,7 @@ OS="${2:?os}"
 ARCH="${3:?arch}"
 OUT="${4:?out-dir}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NAME="plutus-rustus-${OS}-${ARCH}"
+NAME="goldpan-${OS}-${ARCH}"
 
 [[ -f "$BIN" && -x "$BIN" ]] || {
   echo "not an executable: $BIN" >&2
@@ -20,10 +20,10 @@ trap 'rm -rf "$STAGE"' EXIT
 PREFIX="${STAGE}/${NAME}"
 mkdir -p "$PREFIX/bin" "$PREFIX/shell" "$PREFIX/deploy" "$PREFIX/docs"
 
-cp "$BIN" "$PREFIX/bin/plutus-rustus"
-chmod +x "$PREFIX/bin/plutus-rustus"
+cp "$BIN" "$PREFIX/bin/goldpan"
+chmod +x "$PREFIX/bin/goldpan"
 if command -v strip >/dev/null 2>&1; then
-  strip "$PREFIX/bin/plutus-rustus" 2>/dev/null || true
+  strip "$PREFIX/bin/goldpan" 2>/dev/null || true
 fi
 
 cp "$ROOT/config.example.toml" "$PREFIX/config.example.toml"
@@ -38,9 +38,9 @@ for f in plutus start.sh stop.sh status.sh logs.sh install-systemd.sh update.sh 
   chmod +x "$PREFIX/shell/$f"
 done
 
-cp "$ROOT/deploy/plutus.service" "$PREFIX/deploy/plutus.service"
-cp "$ROOT/deploy/plutus-update.service" "$PREFIX/deploy/plutus-update.service"
-cp "$ROOT/deploy/plutus-update.timer" "$PREFIX/deploy/plutus-update.timer"
+cp "$ROOT/deploy/goldpan.service" "$PREFIX/deploy/goldpan.service"
+cp "$ROOT/deploy/goldpan-update.service" "$PREFIX/deploy/goldpan-update.service"
+cp "$ROOT/deploy/goldpan-update.timer" "$PREFIX/deploy/goldpan-update.timer"
 
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"

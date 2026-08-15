@@ -1,13 +1,15 @@
 [Unit]
-Description=Refresh Plutus-Rustus funded-address snapshot
+Description=Refresh Goldpan funded-address snapshot
 After=network-online.target
 
 [Service]
 Type=oneshot
+User=__RUN_USER__
+Group=__RUN_GROUP__
 WorkingDirectory=/opt/plutus-rustus
 EnvironmentFile=-/opt/plutus-rustus/.env
 Environment=PLUTUS_CONFIG=/opt/plutus-rustus/config.toml
 # Only enable this timer when config auto_update = false. Otherwise the
 # running engine already refreshes after dropping its in-memory set.
-ExecStart=/opt/plutus-rustus/bin/plutus-rustus data update
-ExecStartPost=/bin/systemctl try-restart plutus.service
+ExecStart=/opt/plutus-rustus/bin/goldpan data update
+ExecStartPost=/bin/systemctl try-restart goldpan.service

@@ -1,16 +1,19 @@
 [Unit]
-Description=Plutus-Rustus funded-address collider
+Description=Goldpan funded-address collider
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+User=__RUN_USER__
+Group=__RUN_GROUP__
 WorkingDirectory=/opt/plutus-rustus
 EnvironmentFile=-/opt/plutus-rustus/.env
 Environment=PLUTUS_CONFIG=/opt/plutus-rustus/config.toml
-ExecStart=/opt/plutus-rustus/bin/plutus-rustus run
+ExecStart=/opt/plutus-rustus/bin/goldpan run
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=20
 Nice=10
 CPUQuota=40%
 MemoryMax=256M
@@ -18,7 +21,7 @@ LimitNOFILE=65535
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=plutus
+SyslogIdentifier=goldpan
 
 [Install]
 WantedBy=multi-user.target

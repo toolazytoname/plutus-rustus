@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily Plutus-Rustus snapshot refresh
+Description=Daily Goldpan snapshot refresh
 
 [Timer]
 OnCalendar=daily

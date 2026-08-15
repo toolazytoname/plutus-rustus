@@ -35,9 +35,9 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for `--fetch-db`, `--start`, `--version`, a
 # Start
 
 ```
-~/plutus-rustus/bin/plutus-rustus
+~/plutus-rustus/bin/goldpan
 # same as:
-~/plutus-rustus/bin/plutus-rustus run
+~/plutus-rustus/bin/goldpan run
 # or:
 ~/plutus-rustus/shell/plutus start
 ```
@@ -121,26 +121,18 @@ An offline database of funded addresses is used to check generated addresses. Th
 
 ```bash
 ./target/release/plutus-rustus
+# packaged / deployed process name:
+~/plutus-rustus/bin/goldpan
 ```
 ```
-Loaded "02.pickle"
-Loaded "10.pickle"
-Loaded "01.pickle"
-...
-Loaded 44358226 unique funded hash160s (P2PKH + P2WPKH) in 11.31s (0 other/invalid entries skipped)
+Loaded 44358226 unique funded hash160s (P2PKH + P2WPKH) in 11.31s from data/addresses.h160 via mmap (~75MB RAM, 0 skipped)
 Running on 11 worker thread(s)
-checked       56623104 keys |   18822277 keys/s (last 3s) |   18822277 keys/s avg
-checked      108658688 keys |   17338990 keys/s (last 3s) |   18081525 keys/s avg
-checked      166985728 keys |   19396493 keys/s (last 3s) |   18520082 keys/s avg
-checked      223215616 keys |   18722425 keys/s (last 3s) |   18570640 keys/s avg
-...
+still running | checked 56623104 keys | 18822277 keys/s avg | hits 0
 ```
 
-Throughput is reported as an aggregate across all worker threads, refreshed every 3
-seconds. The `avg` column stabilises around **~18 million keys/sec** on an 11-core
-Apple M3 Pro (~2.85M single-thread).
+Live rate is rewritten to `data/status.json` every 3 seconds. The process log only records start, an hourly summary, snapshot refresh, hits, errors, and stop.
 
-Runtime status is also written to `data/status.json` every 3 seconds.
+Throughput is an aggregate across all worker threads. The `avg` in `status.json` stabilises around **~18 million keys/sec** on an 11-core Apple M3 Pro (~2.85M single-thread).
 
 If a wallet with a balance is found, it is appended to `findings/hits.txt`. An example is:
 

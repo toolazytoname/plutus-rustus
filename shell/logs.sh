@@ -3,7 +3,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOG="$ROOT/logs/plutus.log"
+LOG="$ROOT/logs/goldpan.log"
+if [[ ! -f "$LOG" && -f "$ROOT/logs/plutus.log" ]]; then
+  LOG="$ROOT/logs/plutus.log"
+fi
 mkdir -p "$ROOT/logs"
 touch "$LOG"
 exec tail -n 100 -f "$LOG"

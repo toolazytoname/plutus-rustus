@@ -452,7 +452,9 @@ fn reporter(
     let mut last_at = start;
     let mut last_heartbeat = Instant::now();
     let mut last_age_check = Instant::now();
+    let mut last_progress_log = Instant::now();
     let heartbeat = Duration::from_secs(cfg.heartbeat_minutes.saturating_mul(60).max(60));
+    let progress_log = Duration::from_secs(3600);
 
     while shared.running.load(Ordering::Relaxed) {
         if halt.load(Ordering::Relaxed) {
@@ -468,10 +470,10 @@ fn reporter(
         let dt = (now - last_at).as_secs_f64().max(0.001);
         let inst = (total.saturating_sub(last_total)) as f64 / dt;
         let avg = total as f64 / now.duration_since(start).as_secs_f64().max(0.001);
-        println!(
-            "checked {:>14} keys | {:>10.0} keys/s (last 3s) | {:>10.0} keys/s avg | hits {hits}",
-            total, inst, avg
-        );
+        if last_progress_log.elapsed() >= progress_log {
+            println!("still running | checked {total} keys | {avg:.0} keys/s avg | hits {hits}");
+            last_progress_log = now;
+        }
 
         let snapshot_age_hours = db::snapshot_age_secs(&cfg.snapshot)
             .map(|s| s as f64 / 3600.0)

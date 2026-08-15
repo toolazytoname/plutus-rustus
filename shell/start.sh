@@ -27,7 +27,7 @@ export PLUTUS_CONFIG="${PLUTUS_CONFIG:-$ROOT/config.toml}"
 
 SUPERVISOR_PID="$ROOT/data/supervisor.pid"
 ENGINE_PID="$ROOT/data/engine.pid"
-LOG="$ROOT/logs/plutus.log"
+LOG="$ROOT/logs/goldpan.log"
 
 if [[ -f "$SUPERVISOR_PID" ]] && kill -0 "$(cat "$SUPERVISOR_PID")" 2>/dev/null; then
   echo "already running (supervisor pid $(cat "$SUPERVISOR_PID"))" >&2
@@ -38,9 +38,9 @@ rotate_logs() {
   [[ -f "$LOG" ]] || return 0
   local size
   size="$(wc -c <"$LOG" | tr -d ' ')"
-  if [[ "$size" -gt $((50 * 1024 * 1024)) ]]; then
+  if [[ "$size" -gt $((8 * 1024 * 1024)) ]]; then
     mv "$LOG" "$LOG.$(date -u +%Y%m%dT%H%M%S)"
-    ls -1t "$ROOT/logs"/plutus.log.* 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
+    ls -1t "$ROOT/logs"/goldpan.log.* 2>/dev/null | tail -n +4 | xargs rm -f 2>/dev/null || true
   fi
 }
 
