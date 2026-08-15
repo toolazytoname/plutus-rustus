@@ -9,7 +9,7 @@ This began as a port of [Plutus](https://github.com/Isaacdelly/Plutus) and has s
 [![](https://img.shields.io/github/stars/a137x/plutus-rustus.svg)](https://github.com/a137x/plutus-rustus)
 
 # Dependencies
-Tested in `rustc 1.92.0`
+Tested in `rustc 1.85.0` (pinned in `rust-toolchain.toml` so CI clippy matches).
 For Rust dependencies see `Cargo.toml`. A C compiler is required at build time
 (`cc`): the elliptic-curve hot path uses a small C shim (`csrc/`) over
 [libsecp256k1](https://github.com/bitcoin-core/secp256k1) `v0.2.0`, pulled in as a
