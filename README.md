@@ -21,30 +21,25 @@ Minimum <a href="#memory-consumption">RAM requirements</a>
 # Installation
 
 ```bash
-git clone --recursive https://github.com/toolazytoname/plutus-rustus.git
-cd plutus-rustus
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh | bash -s --
 ```
 
-The libsecp256k1 C source is a git submodule (`depend/secp256k1`). Clone with
-`--recursive`, or run `git submodule update --init --recursive` afterwards.
-
-Long-running host: see [docs/DEPLOY.md](docs/DEPLOY.md). Weak VPS keeps
-`profile = "low"` in `config.toml`. Operator commands:
+Default profile is `low` (~75MB). The script downloads a CI-built binary for your OS/arch (curl + tar only). Stronger box:
 
 ```bash
-./shell/plutus start
-./shell/plutus status
-./shell/plutus logs
-./shell/plutus upgrade
+curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh | bash -s -- --profile=full
 ```
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for `--fetch-db`, `--start`, `--version`, and Bark.
 
 # Start
 
 ```
-./target/release/plutus-rustus
+~/plutus-rustus/bin/plutus-rustus
 # same as:
-./target/release/plutus-rustus run
+~/plutus-rustus/bin/plutus-rustus run
+# or:
+~/plutus-rustus/shell/plutus start
 ```
 
 # Proof Of Concept
@@ -155,7 +150,7 @@ If a wallet with a balance is found, it is appended to `findings/hits.txt`. An e
 >15x5ugXCVkzTbs24mG2bu1RkpshW3FTYW8 // P2PKH wallet address
 
 # Memory Consumption
-This program uses approximately **85 MB** of RAM for the funded-address table with the <a href="/database/">current database</a> (`44,365,067` hash160s). A Bloom filter (~16 bits/key) plus a 64K-bucket index live in memory; exact matches `pread` one ~13 KB disk bucket. `lookup = "sorted"` (~900 MB) and `lookup = "hash"` (~1.3 GB) remain available for debugging. Memory for the table is independent of thread count. Only `hash160(pubkey)` address types are kept — P2PKH (`1...`) and P2WPKH (`bc1q...`); P2SH (`3...`), P2WSH and Taproot (`bc1p...`) use a different payload the generator can never match, so they are excluded.
+Default `low` keeps about **75 MB** of RAM for the funded-address table (`44,365,067` hash160s): a Bloom filter (14 bits/key) plus a 64K-bucket index. Exact matches `pread` one ~13 KB disk bucket. `balanced`/`full` use 16/18 bits/key (~85–100 MB). Process RSS is a bit higher; a snapshot refresh peaks around 150–200 MB. A 256 MB machine can run `low`; 512 MB is comfortable. `lookup = "sorted"` (~900 MB) and `lookup = "hash"` (~1.3 GB) remain for debugging. Table RAM does not grow with thread count. Only `hash160(pubkey)` types are kept — P2PKH (`1...`) and P2WPKH (`bc1q...`); P2SH (`3...`), P2WSH and Taproot (`bc1p...`) cannot match and are dropped.
 
 
 <a href="https://github.com/a137x/plutus-rustus/issues">Create an issue</a> so I can add more stuff to improve

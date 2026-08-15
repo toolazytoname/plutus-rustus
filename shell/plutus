@@ -6,8 +6,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BIN="${PLUTUS_BIN:-$ROOT/target/release/plutus-rustus}"
+# shellcheck source=common.sh
+source "$ROOT/shell/common.sh"
+
+BIN="$(plutus_resolve_bin "$ROOT" || true)"
 UNIT_NAME="plutus.service"
+PROFILE="${PLUTUS_PROFILE:-low}"
+PROFILE_SET=0
+FETCH_DB=0
+DO_START=0
+FROM_SOURCE=0
+export PATH="${HOME}/.cargo/bin:${PATH}"
 
 load_env() {
   if [[ -f "$ROOT/.env" ]]; then
@@ -28,57 +37,160 @@ usage() {
   cat <<EOF
 usage: $(basename "$0") <command>
 
-  install   copy config, build release, install systemd if sudo is available
+  install [--profile=low|balanced|full] [--fetch-db] [--start] [--from-source]
   start     start via systemd, or the shell supervisor
   stop      stop systemd or the shell supervisor
   status    live engine JSON (and systemd status when installed)
   logs      follow journal or logs/plutus.log
   doctor    check config, snapshot, notify wiring
-  upgrade   git pull, rebuild, restart
-  update-db download a fresh funded-address snapshot (engine already does this)
+  upgrade   download the latest Release binary and restart
+  update-db download a fresh funded-address snapshot
 
 docs: docs/DEPLOY.md
 EOF
 }
 
+set_kv_file() {
+  local file="$1" key="$2" value="$3"
+  [[ -n "$value" ]] || return 0
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    awk -v k="$key" -v v="$value" '
+      index($0, k "=") == 1 { print k "=" v; next }
+      { print }
+    ' "$file" >"$file.tmp" && mv "$file.tmp" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+
+cpu_quota_from_config() {
+  local p
+  p="$(awk -F'"' '/^profile = / { print $2; exit }' "$ROOT/config.toml" 2>/dev/null || true)"
+  case "$p" in
+    low) echo "40%" ;;
+    balanced) echo "70%" ;;
+    full) echo "100%" ;;
+    *) echo "40%" ;;
+  esac
+}
+
+apply_profile() {
+  local file="$ROOT/config.toml"
+  case "$PROFILE" in
+    low | balanced | full) ;;
+    *)
+      echo "profile must be low, balanced, or full" >&2
+      exit 1
+      ;;
+  esac
+  awk -v p="$PROFILE" '
+    /^profile = / { print "profile = \"" p "\""; next }
+    { print }
+  ' "$file" >"$file.tmp" && mv "$file.tmp" "$file"
+  case "$PROFILE" in
+    low) export PLUTUS_CPU_QUOTA="${PLUTUS_CPU_QUOTA:-40%}" ;;
+    balanced) export PLUTUS_CPU_QUOTA="${PLUTUS_CPU_QUOTA:-70%}" ;;
+    full) export PLUTUS_CPU_QUOTA="${PLUTUS_CPU_QUOTA:-100%}" ;;
+  esac
+  echo "profile=$PROFILE cpu_quota=$PLUTUS_CPU_QUOTA"
+}
+
+parse_install_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        PROFILE="$2"
+        PROFILE_SET=1
+        shift 2
+        ;;
+      --profile=*)
+        PROFILE="${1#*=}"
+        PROFILE_SET=1
+        shift
+        ;;
+      --fetch-db) FETCH_DB=1; shift ;;
+      --start) DO_START=1; shift ;;
+      --from-source) FROM_SOURCE=1; shift ;;
+      *)
+        echo "unknown install option: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+require_bin() {
+  BIN="$(plutus_resolve_bin "$ROOT" || true)"
+  if [[ -z "$BIN" ]]; then
+    echo "missing binary under $ROOT/bin or $ROOT/target/release — run: $ROOT/install.sh" >&2
+    exit 1
+  fi
+}
+
 cmd_install() {
-  git submodule update --init --recursive
   if [[ ! -f "$ROOT/config.toml" ]]; then
     cp "$ROOT/config.example.toml" "$ROOT/config.toml"
-    echo "wrote config.toml (profile=low)"
+    echo "wrote config.toml"
+    PROFILE_SET=1
+  fi
+  if [[ "$PROFILE_SET" -eq 1 ]]; then
+    apply_profile
+  else
+    export PLUTUS_CPU_QUOTA="${PLUTUS_CPU_QUOTA:-$(cpu_quota_from_config)}"
   fi
   if [[ ! -f "$ROOT/.env" ]]; then
     cp "$ROOT/env.example" "$ROOT/.env"
-    echo "wrote .env — set PLUTUS_BARK_KEY and PLUTUS_NODE_NAME"
+    echo "wrote .env"
   fi
-  mkdir -p "$ROOT/data" "$ROOT/findings" "$ROOT/logs"
-  echo "building release binary (native CPU)"
-  cargo rustc --release -- -C target-cpu=native
+  set_kv_file "$ROOT/.env" "PLUTUS_BARK_KEY" "${PLUTUS_BARK_KEY:-}"
+  set_kv_file "$ROOT/.env" "PLUTUS_NODE_NAME" "${PLUTUS_NODE_NAME:-}"
+  mkdir -p "$ROOT/data" "$ROOT/findings" "$ROOT/logs" "$ROOT/bin"
+
+  if [[ "$FROM_SOURCE" -eq 1 ]]; then
+    if [[ -d "$ROOT/.git" ]]; then
+      git -C "$ROOT" submodule update --init --recursive
+    fi
+    echo "building release binary (native CPU)"
+    cargo rustc --release -- -C target-cpu=native
+    mkdir -p "$ROOT/bin"
+    cp "$ROOT/target/release/plutus-rustus" "$ROOT/bin/plutus-rustus"
+  fi
+
+  require_bin
   load_env
   "$BIN" doctor || true
   if [[ "$(id -u)" -eq 0 ]]; then
     bash "$ROOT/shell/install-systemd.sh"
-    echo "start with: systemctl start plutus"
   elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    sudo bash "$ROOT/shell/install-systemd.sh"
-    echo "start with: sudo systemctl start plutus"
+    sudo env PLUTUS_CPU_QUOTA="${PLUTUS_CPU_QUOTA:-40%}" PLUTUS_ROOT="$ROOT" bash "$ROOT/shell/install-systemd.sh"
   else
     echo "no passwordless sudo; start with: $ROOT/shell/plutus start"
-    echo "later, systemd: sudo bash $ROOT/shell/install-systemd.sh"
   fi
-  echo
-  echo "next: edit .env, then $ROOT/shell/plutus doctor && $ROOT/shell/plutus start"
+  if [[ "$FETCH_DB" -eq 1 ]]; then
+    "$BIN" data update
+  fi
+  if [[ "$DO_START" -eq 1 ]]; then
+    cmd_start
+  else
+    echo
+    echo "next:"
+    echo "  $ROOT/shell/plutus update-db   # first snapshot, ~1.4GB download"
+    echo "  $ROOT/shell/plutus start"
+  fi
 }
 
 cmd_start() {
   load_env
-  if [[ ! -x "$BIN" ]]; then
-    echo "missing $BIN — run: $ROOT/shell/plutus install" >&2
-    exit 1
-  fi
+  require_bin
   if have_systemd_unit; then
-    systemctl start "$UNIT_NAME"
-    systemctl --no-pager --full status "$UNIT_NAME" | head -n 12
+    if [[ "$(id -u)" -eq 0 ]]; then
+      systemctl start "$UNIT_NAME"
+    elif systemctl start "$UNIT_NAME" 2>/dev/null; then
+      :
+    else
+      sudo systemctl start "$UNIT_NAME"
+    fi
+    systemctl --no-pager --full status "$UNIT_NAME" | head -n 12 || true
     return
   fi
   bash "$ROOT/shell/start.sh"
@@ -86,7 +198,11 @@ cmd_start() {
 
 cmd_stop() {
   if have_systemd_unit && systemctl is-active --quiet "$UNIT_NAME"; then
-    systemctl stop "$UNIT_NAME"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      systemctl stop "$UNIT_NAME"
+    else
+      systemctl stop "$UNIT_NAME" 2>/dev/null || sudo systemctl stop "$UNIT_NAME"
+    fi
     echo "stopped systemd unit $UNIT_NAME"
     return
   fi
@@ -110,32 +226,48 @@ cmd_logs() {
 
 cmd_doctor() {
   load_env
+  require_bin
   "$BIN" doctor
 }
 
 cmd_upgrade() {
-  git pull --ff-only
-  git submodule update --init --recursive
-  cargo rustc --release -- -C target-cpu=native
+  local url="${PLUTUS_INSTALL_URL:-https://raw.githubusercontent.com/${PLUTUS_GITHUB:-toolazytoname/plutus-rustus}/main/install.sh}"
+  echo "re-running installer from $url"
+  curl -fsSL "$url" | bash -s -- --dir "$ROOT"
+  require_bin
   if have_systemd_unit; then
-    systemctl restart "$UNIT_NAME"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      systemctl restart "$UNIT_NAME"
+    else
+      systemctl restart "$UNIT_NAME" 2>/dev/null || sudo systemctl restart "$UNIT_NAME"
+    fi
     echo "restarted $UNIT_NAME"
-  else
+  elif [[ -f "$ROOT/data/supervisor.pid" ]]; then
     bash "$ROOT/shell/stop.sh" || true
     bash "$ROOT/shell/start.sh"
+  else
+    echo "binary updated. start with: $ROOT/shell/plutus start"
   fi
 }
 
 cmd_update_db() {
   load_env
+  require_bin
   "$BIN" data update
   if have_systemd_unit; then
-    systemctl try-restart "$UNIT_NAME"
+    systemctl try-restart "$UNIT_NAME" 2>/dev/null || sudo systemctl try-restart "$UNIT_NAME" || true
   fi
 }
 
-case "${1:-}" in
-  install) cmd_install ;;
+cmd="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+case "$cmd" in
+  install)
+    parse_install_args "$@"
+    cmd_install
+    ;;
   start) cmd_start ;;
   stop) cmd_stop ;;
   status) cmd_status ;;
@@ -145,7 +277,7 @@ case "${1:-}" in
   update-db) cmd_update_db ;;
   -h | --help | help | "") usage ;;
   *)
-    echo "unknown command: $1" >&2
+    echo "unknown command: $cmd" >&2
     usage >&2
     exit 1
     ;;

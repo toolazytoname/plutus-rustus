@@ -1,71 +1,89 @@
 # 部署
 
-一条分支、一个安装命令、systemd 看管进程。地址库由引擎自己更新，不要再开第二个下载进程。
-
-默认查找是 mmap：Bloom + 分桶索引大约 **75–100MB**，hash160 表在磁盘上。
-
-## 第一次
+弱机器默认 `low`（约 75MB）。安装脚本只需要 **curl** 和 **tar**：按平台从 GitHub Release 拉预编译二进制，不装 git、也不编译。
 
 ```bash
-git clone --recursive <your-fork-url> plutus-rustus
-cd plutus-rustus
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh | bash -s --
 ```
 
-然后只改两个 git 忽略的文件：
-
-1. `.env`：`PLUTUS_BARK_KEY`（Bark 设备密钥）、`PLUTUS_NODE_NAME`（多机时用来区分）
-2. `config.toml`：弱 VPS 保持 `profile = "low"`
+要更高一档、并立刻拉地址库再跑：
 
 ```bash
-./shell/plutus doctor
-./target/release/plutus-rustus notify-test
-./shell/plutus start
-./shell/plutus status
-./shell/plutus logs
+PLUTUS_BARK_KEY=你的Bark密钥 \
+curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh \
+  | bash -s -- --profile=balanced --fetch-db --start
 ```
 
-停：`./shell/plutus stop`  
-以后升级代码：`./shell/plutus upgrade`
+钉某个版本（生产建议）：
 
-有 sudo 时 `install.sh` 会装 `plutus.service`（崩溃自动拉起、`CPUQuota=40%`）。没有 sudo 就用仓库里的 shell 看门狗。
+```bash
+curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh \
+  | bash -s -- --version=v0.2.0 --profile=low
+```
 
-## 弱机器
+`main` 上每次 CI 通过会刷新 `nightly` prerelease：`--nightly` 或 `--version=nightly`。没有正式 tag 时，默认 `latest` 会回落到 nightly。
 
-| 档位 | 适用 | 线程 | CPU | 大约内存 |
-|---|---|---|---|---|
-| `profile = "low"` | 1 核 / 1–2GB VPS | 1 | 40% | ~75MB |
-| `profile = "balanced"` | 普通云主机 | 全核 | 70% | ~85MB |
-| `profile = "full"` | 空闲工作站 | 全核 | 100% | ~100MB |
+| 参数 | 默认 | 作用 |
+|---|---|---|
+| `--profile=low\|balanced\|full` | `low` | 线程 / CPU / 未压缩地址 |
+| `--dir PATH` | `~/plutus-rustus`（root 则 `/opt/plutus-rustus`） | 安装目录 |
+| `--version` | `latest` | Release tag；`latest` 没有则用 `nightly` |
+| `--fetch-db` | 关 | 现在就下载全量地址库（约 1.4GB） |
+| `--start` | 关 | 装完直接启动 |
+| `--from-source` | 关 | 开发者：clone + `cargo` 本机编译（需要 git 和 Rust） |
 
-程序内 `cpu_percent` 是礼让；硬限制用 systemd `CPUQuota`（`PLUTUS_CPU_QUOTA=25% sudo bash shell/install-systemd.sh`）。
+Bark 密钥走环境变量，不要写进命令行参数（`ps` 能看见 argv）。脚本会写进 `.env`，不会打印出来。
 
-**1GB 内存**：`low` 即可。  
-**小于 512MB**：不建议跑。
+Linux 二进制是 **musl 静态链接**，旧版 glibc 的 Debian/Ubuntu VPS 也能跑。macOS 提供 aarch64 和 x86_64。
+
+已经装过的机器：`~/plutus-rustus/shell/plutus upgrade`（再拉一次 Release，保留 `config.toml` / `.env` / `data/`）。
+
+## 装好之后
+
+```bash
+~/plutus-rustus/shell/plutus doctor
+~/plutus-rustus/shell/plutus status
+~/plutus-rustus/shell/plutus logs
+~/plutus-rustus/shell/plutus stop
+~/plutus-rustus/shell/plutus upgrade
+```
+
+有 sudo 时会装 `plutus.service`（崩溃自动拉起、`CPUQuota` 随 profile、`MemoryMax=256M`、日志在 journal）。没有 sudo 就用仓库里的 shell 看门狗。
+
+## 档位
+
+| 档位 | 适用 | 地址表大约占内存 |
+|---|---|---|
+| `low` | 1 核小 VPS | ~75MB |
+| `balanced` | 普通云主机 | ~85MB |
+| `full` | 空闲工作站 | ~100MB |
+
+进程 RSS 会再高一点。更新地址库时先丢掉表再下载，峰值大约一两百 MB。**256MB 内存能跑 `low`；512MB 起更稳；1GB 很宽裕。** 不是苛刻的机器要求。
 
 ## 地址库
 
-`auto_update = true`（默认）：快照超过 30 小时，引擎丢掉内存里的 Bloom、下载 Loyce 全量包、写成 `data/addresses.h160`、再继续跑。Bark 会推「正在更新」；失败则用旧快照接着跑。
+默认 `auto_update=true`：快照超过 30 小时，引擎丢掉 Bloom、下载、再继续。不要再开 `plutus-update.timer`。
 
-不要再 enable `plutus-update.timer`，否则会和引擎抢内存。手动强制更新：
+第一次没带 `--fetch-db` 的话，启动前跑一次：
 
 ```bash
-./shell/plutus update-db
+~/plutus-rustus/shell/plutus update-db
+~/plutus-rustus/shell/plutus start
 ```
 
-第一次没有快照时，`start` 之前跑一次 `update-db`（大约下载 1.4GB 压缩包，写盘，内存峰值仍大约一两百 MB）。
+地址库仍然从 Loyce 拉 gzip（约 1.4GB），不进 GitHub Release（超过合理附件大小）。
 
 ## Bark
 
-1. iOS 装 [Bark](https://github.com/Finb/Bark)
-2. 设备密钥放到 `.env` 的 `PLUTUS_BARK_KEY`
-3. 自建则设 `PLUTUS_BARK_SERVER`
+iOS 装 [Bark](https://github.com/Finb/Bark)，设备密钥放到 `PLUTUS_BARK_KEY`。推送不含私钥：启动、每天「还活着」、正在更新、命中（只有地址）、停止。
 
-推送不含私钥：启动、每天「还活着」、正在更新、命中（只有地址）、停止。一天没「还活着」就是挂了或网络断了。
+## CI / CD
 
-## 设计上为什么这样
+`.github/workflows/ci.yml`：PR 只跑 format / clippy / test。push 到 `main` 或打 `v*` tag 时，verify 通过后按四个 target 出包并上传 Release：
 
-- **进程**：交给 systemd（或薄薄一层 shell 循环）。不要再叠一层自写 supervisor。
-- **地址库**：引擎内部更新，更新前先释放 Bloom，避免双份内存。
-- **密钥**：只在 `.env`，脚本和通知都不带私钥。
-- **代码升级**：`git pull` + 本地编一次 native binary，不走额外的文件服务器。
+- `plutus-rustus-linux-x86_64.tar.gz`（musl）
+- `plutus-rustus-linux-aarch64.tar.gz`（musl）
+- `plutus-rustus-macos-aarch64.tar.gz`
+- `plutus-rustus-macos-x86_64.tar.gz`
+
+每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.0 && git push origin v0.2.0`。

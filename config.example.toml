@@ -18,7 +18,7 @@ directory = "./data"
 snapshot = "./data/addresses.h160"
 source_url = "http://addresses.loyce.club/Bitcoin_addresses_LATEST.txt.gz"
 # Optional local pickle tree. Prefer `./shell/plutus update-db` (no pickles in git).
-pickle_dir = "./database/JUL_12_2026"
+# pickle_dir = "./database/JUL_12_2026"
 # Engine drops RAM, downloads, then reloads. Do not enable the systemd update
 # timer at the same time.
 auto_update = true

@@ -4,9 +4,12 @@
 
 - Repository default is `main`. Install with `./install.sh`; day-to-day ops
   are `./shell/plutus start|stop|status|logs|upgrade`.
-- systemd supervises the process (CPUQuota + MemoryMax + journal). The engine
+- systemd supervises the process (CPUQuota + MemoryMax=256M + journal). The engine
   still refreshes the funded-address snapshot itself; the update timer stays
   off by default.
+- Host bootstrap is `curl | bash -s --` with `--profile=low` by default.
+  CI builds musl/macOS binaries into GitHub Releases; the installer downloads
+  one tarball (curl + tar, checksummed) and does not need git or a compiler.
 
 ## 2026-08-13 — mmap lookup: Bloom + on-disk buckets (~85MB)
 

@@ -13,10 +13,12 @@ if [[ -f "$ROOT/.env" ]]; then
   set +a
 fi
 
-BIN="${PLUTUS_BIN:-$ROOT/target/release/plutus-rustus}"
-if [[ ! -x "$BIN" ]]; then
-  echo "missing $BIN" >&2
-  echo "build with: cargo rustc --release -- -C target-cpu=native" >&2
+# shellcheck source=common.sh
+source "$ROOT/shell/common.sh"
+BIN="$(plutus_resolve_bin "$ROOT" || true)"
+if [[ -z "$BIN" ]]; then
+  echo "missing binary under $ROOT/bin or $ROOT/target/release" >&2
+  echo "install with: curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh | bash -s -- --dir $ROOT" >&2
   exit 1
 fi
 

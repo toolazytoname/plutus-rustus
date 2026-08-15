@@ -13,6 +13,7 @@ use plutus_rustus::notify::Notifier;
 #[derive(Parser)]
 #[command(
     name = "plutus-rustus",
+    version,
     about = "Funded-address key-space collider with a durable local snapshot."
 )]
 struct Cli {

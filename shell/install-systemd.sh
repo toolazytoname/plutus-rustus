@@ -23,7 +23,7 @@ cp "$ROOT/deploy/plutus-update.timer" "$UNIT_DIR/plutus-update.timer"
 
 systemctl daemon-reload
 systemctl enable plutus.service
-echo "installed $UNIT_DIR/plutus.service (CPUQuota=$CPU_QUOTA, MemoryMax=512M)"
+echo "installed $UNIT_DIR/plutus.service (CPUQuota=$CPU_QUOTA, MemoryMax=256M)"
 echo "start: systemctl start plutus"
 echo "logs:  journalctl -u plutus -f"
 echo "leave plutus-update.timer disabled; the engine refreshes the snapshot itself"

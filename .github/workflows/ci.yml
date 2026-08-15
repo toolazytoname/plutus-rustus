@@ -3,23 +3,29 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
+# Job-level permissions can only tighten this. Release jobs need to publish.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
     name: format, lint, and test (${{ matrix.os }})
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      # This repository currently permits only owner-controlled Actions. Fetch
-      # the exact SHA with shell commands rather than depending on checkout.
+      # In-repo workflow only (no marketplace Actions). Fetch the SHA with git
+      # rather than actions/checkout so this still runs if the repo allowlists
+      # local workflows but not GitHub-owned actions.
       - name: Fetch source and submodule
         env:
           REPOSITORY: ${{ github.repository }}
@@ -32,6 +38,9 @@ jobs:
           git checkout --detach FETCH_HEAD
           git submodule update --init --recursive
 
+      - name: Install Rust
+        run: bash scripts/ci-rust.sh --fmt-clippy
+
       - name: Verify formatting
         run: cargo fmt --check
 
@@ -40,3 +49,130 @@ jobs:
 
       - name: Run deterministic tests
         run: cargo test --locked --all-targets
+
+  prepare-release:
+    name: create GitHub release
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Create or refresh the release
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF" == refs/tags/v* ]]; then
+            TAG="${REF#refs/tags/}"
+            NOTES="Release ${TAG} (${SHA})"
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$NOTES"
+            else
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$NOTES" --target "$SHA"
+            fi
+          else
+            TAG=nightly
+            NOTES="Nightly from ${SHA}"
+            if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release edit nightly --repo "$GITHUB_REPOSITORY" --title "nightly" --notes "$NOTES" --prerelease --target "$SHA"
+            else
+              gh release create nightly --repo "$GITHUB_REPOSITORY" --title "nightly" --notes "$NOTES" --prerelease --target "$SHA"
+            fi
+          fi
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+
+  release:
+    name: package ${{ matrix.artifact }}
+    needs: [verify, prepare-release]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: linux-x86_64
+            os_name: linux
+            arch: x86_64
+            musl: "1"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            artifact: linux-aarch64
+            os_name: linux
+            arch: aarch64
+            musl: "1"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: macos-aarch64
+            os_name: macos
+            arch: aarch64
+            musl: "0"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: macos-x86_64
+            os_name: macos
+            arch: x86_64
+            musl: "0"
+    steps:
+      - name: Fetch source and submodule
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          git init .
+          git remote add origin "$SERVER_URL/$REPOSITORY.git"
+          git fetch --depth=1 origin "$SHA"
+          git checkout --detach FETCH_HEAD
+          git submodule update --init --recursive
+
+      - name: Install Rust
+        run: bash scripts/ci-rust.sh
+
+      - name: Build release binary
+        env:
+          TARGET: ${{ matrix.target }}
+          MUSL: ${{ matrix.musl }}
+        run: |
+          set -euo pipefail
+          rustup target add "$TARGET"
+          if [[ "$MUSL" == "1" ]]; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y musl-tools
+            export CC=musl-gcc
+            case "$TARGET" in
+              x86_64-unknown-linux-musl)
+                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+                ;;
+              aarch64-unknown-linux-musl)
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+                ;;
+            esac
+          fi
+          cargo build --locked --release --target "$TARGET"
+          echo "BIN=target/${TARGET}/release/plutus-rustus" >>"$GITHUB_ENV"
+
+      - name: Pack tarball
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package-dist.sh scripts/ci-rust.sh
+          bash scripts/package-dist.sh "$BIN" \
+            "${{ matrix.os_name }}" "${{ matrix.arch }}" dist
+          file "$BIN" || true
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            "dist/plutus-rustus-${ARTIFACT}.tar.gz" \
+            "dist/plutus-rustus-${ARTIFACT}.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
