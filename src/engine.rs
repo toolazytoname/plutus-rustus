@@ -14,6 +14,7 @@ use crate::config::{self, Config};
 use crate::db::{self, Db};
 use crate::hit;
 use crate::notify::Notifier;
+use crate::pending;
 use crate::status::{self, Status};
 
 /// Supervisor should run `data update` and restart when the engine exits with this code.
@@ -174,6 +175,7 @@ struct Shared {
     walk_span: u64,
     cpu_percent: u8,
     findings: PathBuf,
+    data_dir: PathBuf,
 }
 
 struct HitNotice {
@@ -234,6 +236,7 @@ pub fn run(cfg: &Config) -> Result<RunOutcome, String> {
             walk_span: cfg.walk_span,
             cpu_percent: cfg.cpu_percent,
             findings: cfg.findings.clone(),
+            data_dir: cfg.data_dir.clone(),
         });
 
         let (tx, rx) = mpsc::channel::<HitNotice>();
@@ -365,6 +368,11 @@ fn on_hit(
         }
     };
     shared.hits.fetch_add(1, Ordering::Relaxed);
+    if let Err(error) =
+        pending::enqueue(&shared.data_dir, &address, compressed, pending::unix_now())
+    {
+        eprintln!("failed to persist pending hit alert: {error}");
+    }
     let _ = hits.send(HitNotice {
         address,
         compressed,
@@ -455,6 +463,7 @@ fn reporter(
     let mut last_progress_log = Instant::now();
     let heartbeat = Duration::from_secs(cfg.heartbeat_minutes.saturating_mul(60).max(60));
     let progress_log = Duration::from_secs(3600);
+    flush_pending(cfg, &notifier);
 
     while shared.running.load(Ordering::Relaxed) {
         if halt.load(Ordering::Relaxed) {
@@ -462,7 +471,7 @@ fn reporter(
             break;
         }
         thread::sleep(Duration::from_secs(3));
-        drain_hits(&rx, &notifier);
+        drain_hits(&rx, cfg, &notifier);
 
         let now = Instant::now();
         let total = shared.keys.load(Ordering::Relaxed);
@@ -538,7 +547,7 @@ fn reporter(
         last_at = now;
     }
 
-    drain_hits(&rx, &notifier);
+    drain_hits(&rx, cfg, &notifier);
     let total = shared.keys.load(Ordering::Relaxed);
     let hits = shared.hits.load(Ordering::Relaxed);
     let reload = shared.reload.load(Ordering::Relaxed) && !halt.load(Ordering::Relaxed);
@@ -580,17 +589,53 @@ fn reporter(
     }
 }
 
-fn drain_hits(rx: &Receiver<HitNotice>, notifier: &Notifier) {
+fn drain_hits(rx: &Receiver<HitNotice>, cfg: &Config, notifier: &Notifier) {
+    let now = pending::unix_now();
     while let Ok(hit) = rx.try_recv() {
-        let enc = if hit.compressed {
+        if let Err(error) = pending::enqueue(&cfg.data_dir, &hit.address, hit.compressed, now) {
+            eprintln!("failed to persist pending hit alert: {error}");
+        }
+    }
+    flush_pending(cfg, notifier);
+}
+
+fn flush_pending(cfg: &Config, notifier: &Notifier) {
+    if !notifier.enabled() {
+        return;
+    }
+    let now = pending::unix_now();
+    let interval = cfg.notify.hit_repeat_secs;
+    let max = cfg.notify.hit_repeat_max;
+    let due = match pending::due(&cfg.data_dir, now, interval, max) {
+        Ok(items) => items,
+        Err(error) => {
+            eprintln!("pending hit queue: {error}");
+            return;
+        }
+    };
+    for item in due {
+        let enc = if item.compressed {
             "compressed"
         } else {
             "uncompressed"
         };
-        notifier.send(
-            "Plutus 命中",
-            &format!("address={} encoding={enc}", hit.address),
-        );
+        let attempt = item.sent.saturating_add(1);
+        let title = if max == 0 {
+            format!("Plutus 命中 #{attempt}")
+        } else {
+            format!("Plutus 命中 {attempt}/{max}")
+        };
+        let body = format!("address={} encoding={enc} attempt={attempt}", item.address);
+        match notifier.send_hit(&title, &body, attempt) {
+            Ok(()) => {
+                if let Err(error) =
+                    pending::mark_sent(&cfg.data_dir, &item.address, item.compressed, now)
+                {
+                    eprintln!("failed to record hit alert: {error}");
+                }
+            }
+            Err(error) => eprintln!("notify failed: {error}"),
+        }
     }
 }
 

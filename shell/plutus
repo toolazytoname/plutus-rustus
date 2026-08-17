@@ -43,6 +43,7 @@ usage: $(basename "$0") <command>
   status    live engine JSON (and systemd status when installed)
   logs      follow journal or logs/goldpan.log
   doctor    check config, snapshot, notify wiring
+  ack       stop repeating hit alerts (findings stay on disk)
   upgrade   download the latest Release binary and restart
   update-db download a fresh funded-address snapshot
 
@@ -229,6 +230,12 @@ cmd_doctor() {
   "$BIN" doctor
 }
 
+cmd_ack() {
+  load_env
+  require_bin
+  "$BIN" ack
+}
+
 cmd_upgrade() {
   local url="${PLUTUS_INSTALL_URL:-https://raw.githubusercontent.com/${PLUTUS_GITHUB:-toolazytoname/plutus-rustus}/main/install.sh}"
   echo "re-running installer from $url"
@@ -272,6 +279,7 @@ case "$cmd" in
   status) cmd_status ;;
   logs) cmd_logs ;;
   doctor) cmd_doctor ;;
+  ack) cmd_ack ;;
   upgrade) cmd_upgrade ;;
   update-db) cmd_update_db ;;
   -h | --help | help | "") usage ;;

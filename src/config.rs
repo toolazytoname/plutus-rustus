@@ -44,6 +44,10 @@ pub struct NotifyConfig {
     pub token_env: String,
     pub webhook_url_env: String,
     pub bark_server_env: String,
+    /// Seconds between hit re-alerts. `0` = send once.
+    pub hit_repeat_secs: u64,
+    /// Stop after this many successful sends. `0` (default) = keep going until `ack`.
+    pub hit_repeat_max: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +81,8 @@ impl Default for Config {
                 token_env: "PLUTUS_BARK_KEY".to_owned(),
                 webhook_url_env: "PLUTUS_WEBHOOK_URL".to_owned(),
                 bark_server_env: "PLUTUS_BARK_SERVER".to_owned(),
+                hit_repeat_secs: 120,
+                hit_repeat_max: 0,
             },
         }
     }
@@ -129,6 +135,8 @@ struct FileNotify {
     token_env: Option<String>,
     webhook_url_env: Option<String>,
     bark_server_env: Option<String>,
+    hit_repeat_secs: Option<u64>,
+    hit_repeat_max: Option<u32>,
 }
 
 pub fn load() -> Config {
@@ -248,6 +256,12 @@ fn apply_file(cfg: &mut Config, file: FileConfig) {
     if let Some(server_env) = file.notify.bark_server_env {
         cfg.notify.bark_server_env = server_env;
     }
+    if let Some(secs) = file.notify.hit_repeat_secs {
+        cfg.notify.hit_repeat_secs = secs;
+    }
+    if let Some(max) = file.notify.hit_repeat_max {
+        cfg.notify.hit_repeat_max = max;
+    }
 }
 
 fn apply_env(cfg: &mut Config) {
@@ -333,6 +347,7 @@ pub fn ram_hint_mb(cfg: &Config) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn missing_file_uses_product_defaults() {
@@ -340,6 +355,8 @@ mod tests {
         assert!(cfg.check_uncompressed);
         assert_eq!(cfg.walk_span, 1 << 30);
         assert_eq!(cfg.notify.provider, NotifyProvider::Bark);
+        assert_eq!(cfg.notify.hit_repeat_secs, 120);
+        assert_eq!(cfg.notify.hit_repeat_max, 0);
         assert_eq!(cfg.heartbeat_minutes, 1440);
         assert_eq!(cfg.lookup, Lookup::Mmap);
         assert_eq!(cfg.bits_per_key, 16);
@@ -356,6 +373,26 @@ mod tests {
         assert_eq!(cfg.lookup, Lookup::Mmap);
         assert_eq!(cfg.bits_per_key, 14);
         assert!(ram_hint_mb(&cfg) < 120);
+    }
+
+    #[test]
+    fn notify_repeat_from_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("plutus-cfg-{unique}"));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        fs::write(
+            &path,
+            "[notify]\nhit_repeat_secs = 30\nhit_repeat_max = 0\n",
+        )
+        .unwrap();
+        let cfg = load_from_path(&path);
+        assert_eq!(cfg.notify.hit_repeat_secs, 30);
+        assert_eq!(cfg.notify.hit_repeat_max, 0);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

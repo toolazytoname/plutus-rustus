@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 470" role="img" aria-label="Plutus-Rustus hot path">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10151b"/>
+      <stop offset="1" stop-color="#161d25"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b8893a"/>
+      <stop offset="1" stop-color="#e8c57a"/>
+    </linearGradient>
+    <filter id="soft" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1100" height="470" rx="20" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1098" height="468" rx="19" fill="none" stroke="#2a333d"/>
+
+  <text x="40" y="42" fill="#e8c57a" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="12" letter-spacing="2">HOT PATH · 热路径</text>
+  <text x="40" y="72" fill="#f3eee4" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="22" font-weight="600">What each worker does</text>
+  <text x="40" y="96" fill="#8b93a0" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="13">私钥只在命中时落盘。热循环里只走公钥、哈希和查找。</text>
+
+  <g stroke="url(#gold)" stroke-width="2" fill="none">
+    <path d="M220 200 H248"/>
+    <path d="M420 200 H448"/>
+    <path d="M620 200 H648"/>
+    <path d="M820 200 H848"/>
+  </g>
+  <g fill="#e8c57a">
+    <polygon points="246,194 258,200 246,206"/>
+    <polygon points="446,194 458,200 446,206"/>
+    <polygon points="646,194 658,200 646,206"/>
+    <polygon points="846,194 858,200 846,206"/>
+  </g>
+
+  <g font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" filter="url(#soft)">
+    <g>
+      <rect x="32" y="124" width="188" height="150" rx="14" fill="#1c242d" stroke="#313b46"/>
+      <circle cx="56" cy="148" r="11" fill="#2a2114" stroke="#e8c57a"/>
+      <text x="52.5" y="152" fill="#e8c57a" font-size="12" font-weight="700">1</text>
+      <text x="48" y="180" fill="#f3eee4" font-size="15" font-weight="600">Random start</text>
+      <text x="48" y="200" fill="#c9c3b7" font-size="12">随机起点 k</text>
+      <text x="48" y="226" fill="#8b93a0" font-size="12">P = k · G once</text>
+      <text x="48" y="244" fill="#8b93a0" font-size="12">标量乘只做一次</text>
+    </g>
+    <g>
+      <rect x="232" y="124" width="188" height="150" rx="14" fill="#1c242d" stroke="#313b46"/>
+      <circle cx="256" cy="148" r="11" fill="#2a2114" stroke="#e8c57a"/>
+      <text x="252.5" y="152" fill="#e8c57a" font-size="12" font-weight="700">2</text>
+      <text x="248" y="180" fill="#f3eee4" font-size="15" font-weight="600">Walk the curve</text>
+      <text x="248" y="200" fill="#c9c3b7" font-size="12">顺序走 P ← P + G</text>
+      <text x="248" y="226" fill="#8b93a0" font-size="12">batch of 512</text>
+      <text x="248" y="244" fill="#8b93a0" font-size="12">整批一次域求逆</text>
+    </g>
+    <g>
+      <rect x="432" y="124" width="188" height="150" rx="14" fill="#1c242d" stroke="#313b46"/>
+      <circle cx="456" cy="148" r="11" fill="#2a2114" stroke="#e8c57a"/>
+      <text x="452.5" y="152" fill="#e8c57a" font-size="12" font-weight="700">3</text>
+      <text x="448" y="180" fill="#f3eee4" font-size="15" font-weight="600">SIMD hash160</text>
+      <text x="448" y="200" fill="#c9c3b7" font-size="12">SHA-256 + RIPEMD</text>
+      <text x="448" y="226" fill="#8b93a0" font-size="12">NEON / SHA-NI</text>
+      <text x="448" y="244" fill="#8b93a0" font-size="12">四路并行，按比特对拍</text>
+    </g>
+    <g>
+      <rect x="632" y="124" width="188" height="150" rx="14" fill="#1c242d" stroke="#313b46"/>
+      <circle cx="656" cy="148" r="11" fill="#2a2114" stroke="#e8c57a"/>
+      <text x="652.5" y="152" fill="#e8c57a" font-size="12" font-weight="700">4</text>
+      <text x="648" y="180" fill="#f3eee4" font-size="15" font-weight="600">Almost all misses</text>
+      <text x="648" y="200" fill="#c9c3b7" font-size="12">几乎全是未命中</text>
+      <text x="648" y="226" fill="#8b93a0" font-size="12">Bloom, then 13KB</text>
+      <text x="648" y="244" fill="#8b93a0" font-size="12">分桶二分精确比</text>
+    </g>
+    <g>
+      <rect x="832" y="124" width="236" height="150" rx="14" fill="#1c242d" stroke="#e8c57a"/>
+      <circle cx="856" cy="148" r="11" fill="#2a2114" stroke="#e8c57a"/>
+      <text x="852.5" y="152" fill="#e8c57a" font-size="12" font-weight="700">5</text>
+      <text x="848" y="180" fill="#f3eee4" font-size="15" font-weight="600">Pay only on a hit</text>
+      <text x="848" y="200" fill="#c9c3b7" font-size="12">命中再摊成本</text>
+      <text x="848" y="226" fill="#8b93a0" font-size="12">fsync key locally</text>
+      <text x="848" y="244" fill="#8b93a0" font-size="12">通知只带地址，可续叫</text>
+    </g>
+  </g>
+
+  <rect x="32" y="298" width="1036" height="56" rx="12" fill="#151c23" stroke="#2a333d"/>
+  <text x="52" y="332" fill="#c9c3b7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">hash160 = RIPEMD160(SHA256(kG))     secret(n) = k + n  (mod n)     no Base58 in the hot loop</text>
+
+  <text x="40" y="392" fill="#e8c57a" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="13" font-weight="600">Why this shape</text>
+  <text x="40" y="418" fill="#8b93a0" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="13">Scalar mul, field inversion, hashing, and lookup are the four expensive things. Each is attacked separately.</text>
+  <text x="40" y="440" fill="#66707c" font-family="ui-sans-serif, PingFang SC, Noto Sans SC, sans-serif" font-size="12">Space is 2^160. ~18M keys/s on an Apple M3 Pro. Expected hits stay ~0; the artefact is the measured path.</text>
+</svg>

@@ -9,6 +9,7 @@ use plutus_rustus::config::{self, Config};
 use plutus_rustus::db;
 use plutus_rustus::engine::{self, RunOutcome};
 use plutus_rustus::notify::Notifier;
+use plutus_rustus::pending;
 
 #[derive(Parser)]
 #[command(
@@ -29,6 +30,8 @@ enum Command {
     Doctor,
     /// Send one Bark/webhook test that contains no secrets.
     NotifyTest,
+    /// Stop repeating hit alerts. Findings on disk are kept.
+    Ack,
     /// Snapshot import, refresh, and inspection.
     Data {
         #[command(subcommand)]
@@ -60,6 +63,7 @@ fn main() -> ExitCode {
         },
         Command::Doctor => doctor(&cfg),
         Command::NotifyTest => notify_test(&cfg),
+        Command::Ack => ack_hits(&cfg),
         Command::Data {
             command: DataCommand::Prepare,
         } => data_prepare(&cfg),
@@ -92,6 +96,10 @@ fn doctor(cfg: &Config) -> Result<(), String> {
     println!("auto_update={}", cfg.auto_update);
     println!("max_snapshot_age_hours={}", cfg.max_snapshot_age_hours);
     println!("heartbeat_minutes={}", cfg.heartbeat_minutes);
+    println!(
+        "hit_repeat={}s max={}",
+        cfg.notify.hit_repeat_secs, cfg.notify.hit_repeat_max
+    );
     println!("snapshot={}", cfg.snapshot.display());
     println!("pickle_dir={}", cfg.pickle_dir.display());
     println!("findings={}", cfg.findings.display());
@@ -145,6 +153,12 @@ fn doctor(cfg: &Config) -> Result<(), String> {
     } else {
         Err("doctor found problems".into())
     }
+}
+
+fn ack_hits(cfg: &Config) -> Result<(), String> {
+    let n = pending::ack_now(&cfg.data_dir).map_err(|e| e.to_string())?;
+    println!("acked {n} pending hit alert(s); findings were not touched");
+    Ok(())
 }
 
 fn notify_test(cfg: &Config) -> Result<(), String> {

@@ -35,3 +35,7 @@ provider = "bark"
 token_env = "PLUTUS_BARK_KEY"
 bark_server_env = "PLUTUS_BARK_SERVER"
 webhook_url_env = "PLUTUS_WEBHOOK_URL"
+# A real hit is astronomically rare. Keep poking until `plutus-rustus ack`.
+# 0 seconds = one shot. 0 max = keep going until ack (the default).
+hit_repeat_secs = 120
+hit_repeat_max = 0

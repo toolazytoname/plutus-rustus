@@ -10,6 +10,7 @@ pub mod db;
 pub mod engine;
 pub mod hit;
 pub mod notify;
+pub mod pending;
 pub mod status;
 
 pub use config::Config;

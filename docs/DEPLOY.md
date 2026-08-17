@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/in
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/install.sh \
-  | bash -s -- --version=v0.2.2 --profile=low
+  | bash -s -- --version=v0.2.3 --profile=low
 ```
 
 `main` 上每次 CI 通过会刷新 `nightly` prerelease：`--nightly` 或 `--version=nightly`。没有正式 tag 时，默认 `latest` 会回落到 nightly。
@@ -32,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/toolazytoname/plutus-rustus/main/in
 | `--start` | 关 | 装完直接启动 |
 | `--from-source` | 关 | 开发者：clone + `cargo` 本机编译（需要 git 和 Rust） |
 
-Bark 密钥走环境变量，不要写进命令行参数（`ps` 能看见 argv）。脚本会写进 `.env`，不会打印出来。
+Bark 密钥走环境变量，不要写进命令行参数（`ps` 能看见 argv）。脚本会写进 `.env`，不会打印出来。命中后默认每 120 秒再推一次，一直叫到你跑 `plutus-rustus ack`（或 `goldpan ack`）。私钥只在本地 `findings/hits.txt`。
 
 Linux 二进制是 **musl 静态链接**，旧版 glibc 的 Debian/Ubuntu VPS 也能跑。macOS 提供 aarch64 和 x86_64。
 
@@ -44,6 +44,7 @@ Linux 二进制是 **musl 静态链接**，旧版 glibc 的 Debian/Ubuntu VPS �
 ~/plutus-rustus/shell/plutus doctor
 ~/plutus-rustus/shell/plutus status
 ~/plutus-rustus/shell/plutus logs
+~/plutus-rustus/shell/plutus ack
 ~/plutus-rustus/shell/plutus stop
 ~/plutus-rustus/shell/plutus upgrade
 ```
@@ -86,4 +87,4 @@ iOS 装 [Bark](https://github.com/Finb/Bark)，设备密钥放到 `PLUTUS_BARK_K
 - `goldpan-macos-aarch64.tar.gz`
 - `goldpan-macos-x86_64.tar.gz`
 
-每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.2 && git push origin v0.2.2`。
+每个包带 `.sha256`。安装脚本校验后再解压。正式发版：`git tag v0.2.3 && git push origin v0.2.3`。

@@ -5,6 +5,23 @@ use reqwest::blocking::Client;
 
 use crate::config::{self, NotifyConfig, NotifyProvider};
 
+#[derive(Clone, Copy)]
+enum AlertLevel {
+    Active,
+    TimeSensitive,
+    Critical,
+}
+
+impl AlertLevel {
+    fn as_bark(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::TimeSensitive => "timeSensitive",
+            Self::Critical => "critical",
+        }
+    }
+}
+
 pub struct Notifier {
     client: Client,
     provider: NotifyProvider,
@@ -81,7 +98,7 @@ impl Notifier {
         if !self.enabled() {
             return;
         }
-        if let Err(error) = self.send_inner(title, body) {
+        if let Err(error) = self.send_inner(title, body, AlertLevel::Active, "plutus") {
             eprintln!("notify failed: {error}");
         }
     }
@@ -90,13 +107,32 @@ impl Notifier {
         if !self.enabled() {
             return Err("notify is not enabled or credentials are missing".into());
         }
-        self.send_inner(title, body)
+        self.send_inner(title, body, AlertLevel::Active, "plutus")
     }
 
-    fn send_inner(&self, title: &str, body: &str) -> Result<(), String> {
+    /// Rare-event alert. First delivery is time-sensitive; later repeats go critical.
+    pub fn send_hit(&self, title: &str, body: &str, attempt: u32) -> Result<(), String> {
+        if !self.enabled() {
+            return Err("notify is not enabled or credentials are missing".into());
+        }
+        let level = if attempt <= 1 {
+            AlertLevel::TimeSensitive
+        } else {
+            AlertLevel::Critical
+        };
+        self.send_inner(title, body, level, "plutus-hit")
+    }
+
+    fn send_inner(
+        &self,
+        title: &str,
+        body: &str,
+        level: AlertLevel,
+        group: &str,
+    ) -> Result<(), String> {
         match self.provider {
             NotifyProvider::Disabled => Ok(()),
-            NotifyProvider::Bark => self.send_bark(title, body),
+            NotifyProvider::Bark => self.send_bark(title, body, level, group),
             NotifyProvider::Webhook => {
                 let url = self.webhook_url.as_ref().ok_or("webhook URL missing")?;
                 let response = self
@@ -133,22 +169,33 @@ impl Notifier {
         }
     }
 
-    fn send_bark(&self, title: &str, body: &str) -> Result<(), String> {
+    fn send_bark(
+        &self,
+        title: &str,
+        body: &str,
+        level: AlertLevel,
+        group: &str,
+    ) -> Result<(), String> {
         let key = self.bark_key.as_ref().ok_or("Bark key missing")?;
         let url = if key.starts_with("http://") || key.starts_with("https://") {
             key.trim_end_matches('/').to_owned()
         } else {
             format!("{}/{key}", self.bark_server.trim_end_matches('/'))
         };
+        let level_s = level.as_bark();
+        let mut form = vec![
+            ("title", title),
+            ("body", body),
+            ("group", group),
+            ("level", level_s),
+        ];
+        if matches!(level, AlertLevel::Critical) {
+            form.push(("volume", "5"));
+        }
         let response = self
             .client
             .post(url)
-            .form(&[
-                ("title", title),
-                ("body", body),
-                ("group", "plutus"),
-                ("level", "active"),
-            ])
+            .form(&form)
             .send()
             .map_err(|_| "Bark request failed".to_owned())?;
         if response.status().is_success() {

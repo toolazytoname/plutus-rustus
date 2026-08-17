@@ -1,6 +1,14 @@
-# Plutus-Rustus Bitcoin Brute Forcer
+<p align="center">
+  <img src="docs/assets/hero.jpg" alt="Plutus-Rustus" width="100%">
+</p>
 
-A Bitcoin wallet collider that brute forces random wallet addresses written in Rust.
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">中文</a>
+</p>
+
+# Plutus-Rustus
+
+A high-performance Bitcoin key-space scanner written in Rust — a performance-engineering lab that happens to walk secp256k1. Expected value is ~zero (2<sup>160</sup> vs ~44M funded addresses); the point is the hot path.
 
 This began as a port of [Plutus](https://github.com/Isaacdelly/Plutus) and has since been substantially optimised — see [Efficiency](#efficiency). On an Apple M3 Pro it now checks **~18 million keys/second** across all cores (**~2.85M single-thread**), using the same techniques that make [mattsta/Plutus](https://github.com/mattsta/Plutus) fast: a sequential elliptic-curve walk with batched (Montgomery) field inversion, and a SIMD `hash160`.
 
@@ -46,9 +54,13 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for `--fetch-db`, `--start`, `--version`, a
 
 A private key is a secret number that allows Bitcoins to be spent. If a wallet has Bitcoins in it, then the private key will allow a person to control the wallet and spend whatever balance the wallet has. So this program attempts to find Bitcoin private keys that correlate to wallets with positive balances. However, because it is impossible to know which private keys control wallets with money and which private keys control empty wallets, we have to randomly look at every possible private key that exists and hope to find one that has a balance.
 
-This program is essentially a brute forcing algorithm. It continuously generates Bitcoin private keys, converts them into their respective wallet addresses, then checks each address against an offline database of wallets that currently hold a balance. If a match is found, then the private key, public key and wallet address are saved to `findings/hits.txt` (fsynced). Notifications, if enabled, include only the address. The ultimate goal is to find a wallet with a balance out of the 2<sup>160</sup> possible wallets in existence.
+This program is essentially a brute forcing algorithm. It continuously generates Bitcoin private keys, converts them into their respective wallet addresses, then checks each address against an offline database of wallets that currently hold a balance. If a match is found, then the private key, public key and wallet address are saved to `findings/hits.txt` (fsynced). Notifications, if enabled, include only the address. A real hit is so rare that one banner is not enough: the engine keeps re-alerting every `hit_repeat_secs` (default 120s) across restarts until you run `plutus-rustus ack`. The pending queue never stores secrets. The ultimate goal is to find a wallet with a balance out of the 2<sup>160</sup> possible wallets in existence — which, at ~18M keys/s, is not a practical plan. This repo is the optimisation record.
 
 # How It Works
+
+<p align="center">
+  <img src="docs/assets/pipeline.svg" alt="Hot path: random start, sequential walk, SIMD hash160, bloom lookup, durable hit alert" width="100%">
+</p>
 
 Each worker thread draws **one** random private key, then walks the key space sequentially by repeatedly adding the secp256k1 generator point `G` to the running public key. The walk is done in **batches of 512** so that the whole batch shares a single elliptic-curve field inversion instead of one per key (see [Efficiency](#efficiency)). Every public key is hashed to its 20-byte `hash160` — the core of a P2PKH address — via SHA-256 then RIPEMD-160; on aarch64 this uses the ARMv8 SHA-256 instructions and a 4-wide NEON RIPEMD-160, and on x86_64 SHA-NI plus 4-wide SSE2 RIPEMD-160. Uncompressed P2PKH is checked by default. No Base58 encoding happens in the hot loop.
 
@@ -133,6 +145,18 @@ still running | checked 56623104 keys | 18822277 keys/s avg | hits 0
 Live rate is rewritten to `data/status.json` every 3 seconds. The process log only records start, an hourly summary, snapshot refresh, hits, errors, and stop.
 
 Throughput is an aggregate across all worker threads. The `avg` in `status.json` stabilises around **~18 million keys/sec** on an 11-core Apple M3 Pro (~2.85M single-thread).
+
+# Hit alerts
+
+A funded-address match is fsynced to `findings/hits.txt` first (private key, WIF, public key, address). The notifier then sends **address only**. Because a real hit is a once-in-a-universe event, the default is to keep poking every 120 seconds, surviving process restarts via `data/pending-hits.json`, until you ack. Stop the repeats with:
+
+```bash
+plutus-rustus ack
+# packaged name:
+~/plutus-rustus/bin/goldpan ack
+```
+
+`ack` does not touch findings. Set `hit_repeat_secs = 0` for a single shot. `hit_repeat_max` defaults to `0` (until ack); set a positive number only if you want a cap.
 
 If a wallet with a balance is found, it is appended to `findings/hits.txt`. An example is:
 
